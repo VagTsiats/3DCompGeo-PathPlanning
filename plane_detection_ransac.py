@@ -9,18 +9,23 @@ def find_planes(pcd: o3d.geometry.PointCloud):
 
     pcd_no_planes = copy.deepcopy(pcd)
 
-    bbox = pcd.get_axis_aligned_bounding_box()
+    # bbox = pcd.get_axis_aligned_bounding_box()
 
+    # bbox_center = bbox.get_center()
+    # bbox_half_ext = bbox.get_half_extent()
+
+    bbox = pcd.get_minimal_oriented_bounding_box()
     bbox_center = bbox.get_center()
-    bbox_half_ext = bbox.get_half_extent()
+    bbox_axis = bbox.R
+    bbox_half_ext = bbox.extent / 2
 
     bbox_face_centroids = np.tile(bbox_center, (6, 1))
 
     for i in range(6):
         if i < 3:
-            bbox_face_centroids[i, i] += bbox_half_ext[i]
+            bbox_face_centroids[i] += bbox_half_ext[i] * bbox_axis[i]
         else:
-            bbox_face_centroids[i, i - 3] -= bbox_half_ext[i - 3]
+            bbox_face_centroids[i] -= bbox_half_ext[i - 3] * bbox_axis[i - 3]
 
     bbox_cent = o3d.geometry.PointCloud()
     bbox_cent.points = o3d.utility.Vector3dVector(bbox_face_centroids)
@@ -43,7 +48,7 @@ def find_planes(pcd: o3d.geometry.PointCloud):
 
         idx = np.argmin(distances_to_bbox_faces)
 
-        if distances_to_bbox_faces[idx] < 0.3:
+        if distances_to_bbox_faces[idx] < 0.5:
             bbox_face_centroids = np.delete(bbox_face_centroids, idx, axis=0)
             inlier_cloud.paint_uniform_color([1, 0, 0])
             pl_bbx = inlier_cloud.get_oriented_bounding_box()
