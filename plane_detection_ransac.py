@@ -3,7 +3,7 @@ import copy
 import numpy as np
 
 
-def find_planes(pcd: o3d.geometry.PointCloud):
+def find_pcd_planes(pcd: o3d.geometry.PointCloud):
 
     num_planes = 0
 
@@ -37,8 +37,6 @@ def find_planes(pcd: o3d.geometry.PointCloud):
             break
         plane_, inliers = pcd_no_planes.segment_plane(distance_threshold=0.05, ransac_n=3, num_iterations=10000)
 
-        # afou vrisko ta epipeda me strict oria na kanv fit ta shmeia toy point cloud pio xalara gia na vrisko ola ta shmeia toy epipedoy
-
         inlier_cloud = pcd_no_planes.select_by_index(inliers)
 
         plane_centroid = inlier_cloud.get_center()
@@ -50,16 +48,17 @@ def find_planes(pcd: o3d.geometry.PointCloud):
 
         if distances_to_bbox_faces[idx] < 0.5:
             bbox_face_centroids = np.delete(bbox_face_centroids, idx, axis=0)
-            inlier_cloud.paint_uniform_color([1, 0, 0])
+            inlier_cloud.paint_uniform_color(np.random.random((3, 1)))
             pl_bbx = inlier_cloud.get_oriented_bounding_box()
             pl_bbx.color = np.random.random((3, 1))
             plane_bboxes.append(pl_bbx)
+            # plane_bboxes.append(inlier_cloud)
             num_planes += 1
         else:
             inlier_cloud.paint_uniform_color([0, 0, 1])
 
         pcd_no_planes = pcd_no_planes.select_by_index(inliers, invert=True)
-        o3d.visualization.draw_geometries([inlier_cloud, pcd_no_planes, bbox_cent])
+        # o3d.visualization.draw_geometries([inlier_cloud, pcd_no_planes, bbox_cent])
 
     return plane_bboxes
 
