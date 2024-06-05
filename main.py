@@ -14,9 +14,9 @@ if __name__ == "__main__":
     mesh = o3d.io.read_triangle_mesh("dataset/area_3/3d/semantic.obj")
     pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/office_6/office_6.txt", format="xyz")
 
-    R = mesh.get_rotation_matrix_from_xyz((-np.pi / 2, 0, 0))
+    R = mesh.get_rotation_matrix_from_xyz((np.pi / 2, 0, 0))
 
-    pcd.rotate(R, center=(0, 0, 0))
+    mesh.rotate(R, center=(0, 0, 0))
 
     mesh.compute_triangle_normals()
 
@@ -45,6 +45,8 @@ if __name__ == "__main__":
 
     # mesh_plane_w_normals.find_mesh_planes(room_mesh)
 
+    # room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
+
     voxels.do_voxels(room_mesh)
 
 
@@ -62,6 +64,7 @@ if __name__ == "__main__":
 #     for idx in plane_cluster:
 #         room_pcd.colors[idx] = col
 #     plane_points.update(plane_cluster)
+
 
 # pcd_no_planes = room_pcd.select_by_index(list(plane_points), invert=True)
 
