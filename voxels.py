@@ -38,8 +38,23 @@ class VoxelSegment:
     def set_state(self, idx, state):
         self.voxels[idx[0], idx[1], idx[2]] = state
 
+    def filter_normals(self):
+        ceiling_mask = self.voxels == VoxelState.Ceiling
+        ceiling_idx = np.nonzero(ceiling_mask)
+
+        for i, v in enumerate(self.voxels[ceiling_mask]):
+            self.voxels[ceiling_idx[0][i], ceiling_idx[1][i], ceiling_idx[2][i]] = self.filt_3d_26(
+                [ceiling_idx[0][i], ceiling_idx[1][i], ceiling_idx[2][i]]
+            )
+
+        floor_mask = self.voxels == VoxelState.Floor
+        floor_idx = np.nonzero(floor_mask)
+
+        for i, v in enumerate(self.voxels[floor_mask]):
+            self.voxels[floor_idx[0][i], floor_idx[1][i], floor_idx[2][i]] = self.filt_3d_26([floor_idx[0][i], floor_idx[1][i], floor_idx[2][i]])
+
     def ceiling_detection(self):
-        for i in tqdm(range(self.dims[0])):
+        for i in range(self.dims[0]):
             for j in range(self.dims[1]):
                 for k in range(self.dims[2]):
                     if k > 0:
@@ -50,13 +65,11 @@ class VoxelSegment:
 
         target_mask = self.voxels == VoxelState.Ceiling
 
-        labeled_grid, num_labels = label(target_mask)
-
-        # Initialize dictionary to store occupied volume of each segment
-        segment_volumes = {}
+        # scipy label uses 26 neighborhood
+        labeled_grid, num_labels = label(self.voxels == VoxelState.Ceiling)
 
         # Iterate over each labeled segment
-        for label_id in range(1, num_labels + 1):  # Skip background label (0)
+        for label_id in range(1, num_labels + 1):
             # Extract voxels belonging to current segment
             segment_mask = labeled_grid == label_id
             segment_voxels = target_mask * segment_mask.astype(int)
@@ -66,11 +79,7 @@ class VoxelSegment:
             if occupied_volume < 300:
                 self.voxels[segment_mask] = VoxelState.Occupied
 
-            # Store occupied volume of current segment in dictionary
-            segment_volumes[label_id] = occupied_volume
-
-        # print(segment_volumes)
-
+        # fill holes
         # for i in tqdm(range(self.dims[0])):
         #     for j in range(self.dims[1]):
         #         for k in range(self.dims[2]):
@@ -84,9 +93,8 @@ class VoxelSegment:
         #                 ):
         #                     self.voxels[i, j, k] = VoxelState.Ceiling
 
-    def filt_3d_26(self, idx, state, threshold):
-        # Get value of current voxel
-        current_value = self.voxels[idx[0], idx[1], idx[2]]
+    def filt_3d_26(self, idx, state=None, threshold=3):
+        values = np.zeros((5,))
 
         # Check 26-neighborhood
         num_neighbors = 0
@@ -99,13 +107,17 @@ class VoxelSegment:
                         and 0 <= idx[1] + dj < self.voxels.shape[1]
                         and 0 <= idx[2] + dk < self.voxels.shape[2]
                     ):
+                        values[self.voxels[idx[0] + di, idx[1] + dj, idx[2] + dk].astype(int)] += 1
                         if self.voxels[idx[0] + di, idx[1] + dj, idx[2] + dk] == state:
                             num_neighbors += 1
 
+        if state == None:
+            values[0] = 0
+            return np.argmax(values)
+
         if num_neighbors > threshold:
-            return 1
-        else:
-            return 0
+            return
+        return 0
 
     def vis_state(self, state):
         pcd = o3d.geometry.PointCloud()
@@ -217,16 +229,17 @@ def do_voxels(mesh):
                 normal = triangle_normals[tri_id]
 
         if is_ceiling(normal):
-            voxel.color = [1, 0, 0]
             seg.set_state(voxel.grid_index, VoxelState.Ceiling)
         elif is_floor(normal):
-            voxel.color = [0, 1, 0]
             seg.set_state(voxel.grid_index, VoxelState.Floor)
         else:
-            voxel.color = [0.5, 0.5, 0.5]
             seg.set_state(voxel.grid_index, VoxelState.Wall)
 
-        voxel_grid.add_voxel(voxel)
+    seg.vis()
+
+    seg.filter_normals()
+
+    seg.vis()
 
     seg.ceiling_detection()
 
@@ -234,7 +247,7 @@ def do_voxels(mesh):
 
     mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=voxel_grid.get_min_bound())
 
-    o3d.visualization.draw_geometries([voxel_grid, mesh_frame, room_mesh])
+    # o3d.visualization.draw_geometries([voxel_grid, mesh_frame, room_mesh])
 
 
 if __name__ == "__main__":
