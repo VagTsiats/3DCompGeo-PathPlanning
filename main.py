@@ -5,6 +5,7 @@ import plane_detection_ransac
 import mesh_plane_w_normals
 import voxels
 from tqdm import tqdm
+import uniform_sample
 
 
 if __name__ == "__main__":
@@ -12,7 +13,14 @@ if __name__ == "__main__":
     o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
     mesh = o3d.io.read_triangle_mesh("dataset/area_3/3d/semantic.obj")
-    pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/office_6/office_6.txt", format="xyz")
+    pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/office_9/office_9.txt", format="xyz")
+    pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_10/office_10.txt", format="xyz")
+
+    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_1/office_1.txt", format="xyz")
+    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_2/office_2.txt", format="xyz")
+
+    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_7/office_7.txt", format="xyz")
+    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_10/office_10.txt", format="xyz")
 
     R = mesh.get_rotation_matrix_from_xyz((np.pi / 2, 0, 0))
 
@@ -47,42 +55,44 @@ if __name__ == "__main__":
 
     # room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
 
-    voxels.do_voxels(room_mesh)
+    # pcd = uniform_sample.sample_mesh_uniformly(room_mesh,int(1e6))
+    o3d.visualization.draw_geometries([pcd])
 
+    # voxels.do_voxels_mesh(room_mesh)
+    voxels.voxelize_pcd(pcd)
 
-# SECTION - Ransac on pcd
-# planes_bbox = plane_detection_ransac.find_planes(room_pcd)
+    # SECTION - Ransac on pcd
+#     planes_bbox = plane_detection_ransac.find_pcd_planes(room_pcd)
 
-# # room_pcd.estimate_normals()
-# # planes_bbox = room_pcd.detect_planar_patches(min_plane_edge_length=1, normal_variance_threshold_deg=20, outlier_ratio=0.2, coplanarity_deg=75)
-# # planes_bbox.append(room_mesh)
+#     # room_pcd.estimate_normals()
+#     # planes_bbox = room_pcd.detect_planar_patches(min_plane_edge_length=1, normal_variance_threshold_deg=20, outlier_ratio=0.2, coplanarity_deg=75)
+#     # planes_bbox.append(room_mesh)
 
-# plane_points = set()
-# for bb in planes_bbox:
-#     plane_cluster = bb.get_point_indices_within_bounding_box(room_pcd.points)
-#     col = np.random.random((3, 1))
-#     for idx in plane_cluster:
-#         room_pcd.colors[idx] = col
-#     plane_points.update(plane_cluster)
+#     plane_points = set()
+#     for bb in planes_bbox:
+#         plane_cluster = bb.get_point_indices_within_bounding_box(room_pcd.points)
+#         col = np.random.random((3, 1))
+#         for idx in plane_cluster:
+#             room_pcd.colors[idx] = col
+#         plane_points.update(plane_cluster)
 
+#     pcd_no_planes = room_pcd.select_by_index(list(plane_points), invert=True)
 
-# pcd_no_planes = room_pcd.select_by_index(list(plane_points), invert=True)
+#     height_mask = np.asarray(pcd_no_planes.points)[:, 1] < bbox.get_center()[2] + 0.1
 
-# height_mask = np.asarray(pcd_no_planes.points)[:, 1] < bbox.get_center()[1] + 10
+#     pcd_no_planes_cut = o3d.geometry.PointCloud()
+#     pcd_no_planes_cut.points = o3d.utility.Vector3dVector(np.asarray(pcd_no_planes.points)[height_mask])
+#     pcd_no_planes_cut.paint_uniform_color([1, 0, 0])
 
-# pcd_no_planes_cut = o3d.geometry.PointCloud()
-# pcd_no_planes_cut.points = o3d.utility.Vector3dVector(np.asarray(pcd_no_planes.points)[height_mask])
-# pcd_no_planes_cut.paint_uniform_color([1, 0, 0])
+#     # χρησιμοποιώντας το extend των bboxes μπορώ να βρω με εξωτερικό γινόμενο το normal θεωρητικά και να βρώ ποιό είναι το πάτωμα
 
-# # χρησιμοποιώντας το extend των bboxes μπορώ να βρω με εξωτερικό γινόμενο το normal θεωρητικά και να βρώ ποιό είναι το πάτωμα
+#     geometries = planes_bbox
+#     geometries.append(pcd_no_planes_cut)
+#     # geometries.append(room_pcd)
+#     geometries.append(room_mesh)
 
-# geometries = planes_bbox
-# geometries.append(pcd_no_planes_cut)
-# # geometries.append(room_pcd)
-# geometries.append(room_mesh)
-
-# o3d.visualization.draw_geometries(geometries)
-#!SECTION
+#     o3d.visualization.draw_geometries(geometries)
+# #!SECTION
 
 # Apostaseis
 ##geodesiakes apostaseis
