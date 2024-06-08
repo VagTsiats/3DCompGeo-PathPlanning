@@ -27,7 +27,6 @@ def sample_point_in_triangle(v0, v1, v2):
     v = sqrt_r1 * (1 - r2)
     w = sqrt_r1 * r2
 
-    # Calculate the random point P
     sampled_point = u * v0 + v * v1 + w * v2
 
     return sampled_point

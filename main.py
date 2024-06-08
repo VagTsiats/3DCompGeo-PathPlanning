@@ -16,11 +16,11 @@ if __name__ == "__main__":
     pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/office_9/office_9.txt", format="xyz")
     pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_10/office_10.txt", format="xyz")
 
-    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_1/office_1.txt", format="xyz")
-    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_2/office_2.txt", format="xyz")
+    pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_1/office_1.txt", format="xyz")
+    pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_2/office_2.txt", format="xyz")
 
-    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_7/office_7.txt", format="xyz")
-    # pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_10/office_10.txt", format="xyz")
+    pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_7/office_7.txt", format="xyz")
+    pcd += o3d.io.read_point_cloud("dataset/area_3/Area_3/office_8/office_8.txt", format="xyz")
 
     R = mesh.get_rotation_matrix_from_xyz((np.pi / 2, 0, 0))
 
@@ -58,8 +58,8 @@ if __name__ == "__main__":
     # pcd = uniform_sample.sample_mesh_uniformly(room_mesh,int(1e6))
     o3d.visualization.draw_geometries([pcd])
 
-    # voxels.do_voxels_mesh(room_mesh)
-    voxels.voxelize_pcd(pcd)
+    voxels.voxelize_mesh(room_mesh)
+    # voxels.voxelize_pcd(pcd)
 
     # SECTION - Ransac on pcd
 #     planes_bbox = plane_detection_ransac.find_pcd_planes(room_pcd)
