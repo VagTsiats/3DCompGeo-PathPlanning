@@ -58,8 +58,8 @@ if __name__ == "__main__":
     # pcd = uniform_sample.sample_mesh_uniformly(room_mesh,int(1e6))
     o3d.visualization.draw_geometries([pcd])
 
-    voxels.voxelize_mesh(room_mesh)
-    # voxels.voxelize_pcd(pcd)
+    # voxels.voxelize_mesh(room_mesh)
+    voxels.voxelize_pcd(pcd)
 
     # SECTION - Ransac on pcd
 #     planes_bbox = plane_detection_ransac.find_pcd_planes(room_pcd)
