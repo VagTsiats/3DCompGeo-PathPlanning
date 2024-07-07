@@ -8,6 +8,12 @@ from matplotlib import pyplot as plt
 import uniform_sample
 import time
 import ransac
+import dbscan
+from object_polygon import object_polygon
+
+from definitions import *
+
+# import voxel_grid_projection
 
 
 class VoxelLabel:
@@ -38,6 +44,7 @@ class VoxelGrid:
 
         self.grid_labels = np.ones(self.dims, dtype=int) * (VoxelLabel.Empty)
         self.grid_normals = np.ones(self.dims, dtype=int) * (VoxelNormal.Undefined)
+        self.object_clusters = np.ones(self.dims, dtype=int) * (-2)
 
         self.floor_height = 0
 
@@ -90,7 +97,7 @@ class VoxelGrid:
         for i in tqdm(range(len(occ_idx)), desc="Normal Filtering"):
             self.grid_normals[occ_idx[0][i], occ_idx[1][i], occ_idx[2][i]] = self.filter_3d_26([occ_idx[0][i], occ_idx[1][i], occ_idx[2][i]], d=2)
 
-    def ceiling_floor_detection(self, min_area=1):
+    def ceiling_floor_detection(self):
         vertical_normal_mask = self.grid_normals == VoxelNormal.Vertical
 
         labeled_grid, num_labels = nd.label(vertical_normal_mask, nd.generate_binary_structure(3, 3))
@@ -106,15 +113,18 @@ class VoxelGrid:
 
             occupied_area = np.sum(vertical_normal_2d_mask)
 
-            if occupied_area < int(np.round(min_area / self.voxel_size**2)):
+            if occupied_area < int(np.round(VERTICAL_NORMAL_MIN_AREA / self.voxel_size**2)):
                 continue
 
             mean_height = np.mean(idx[2])
 
             if mean_height < self.dims[2] / 2:
-                if mean_height < 5:
+                if mean_height < FLOOR_MAX_HEIGHT:
                     self.grid_labels[segment_mask] = VoxelLabel.Floor
-                    self.floor_height = (self.floor_height + mean_height) / 2
+                    if self.floor_height == 0:
+                        self.floor_height = mean_height
+                    else:
+                        self.floor_height = (self.floor_height + mean_height) / 2
             else:
                 self.grid_labels[segment_mask] = VoxelLabel.Ceiling
 
@@ -123,94 +133,109 @@ class VoxelGrid:
         for k in tqdm(range(self.dims[2]), desc="Ceiling Refinements"):
             for j in range(self.dims[1]):
                 for i in range(self.dims[0]):
-                    # Pass walls through Ceiling
-                    if k > 0:
-                        if (self.grid_labels[i, j, k] == VoxelLabel.Ceiling) and self.grid_labels[i, j, k - 1] == VoxelLabel.Wall:
-                            self.grid_labels[i, j, k] = VoxelLabel.Wall
-
                     # No occupied on ceiling level
                     if self.grid_labels[i, j, k] == VoxelLabel.Occupied:
                         if self.filter_2d_8(grid=self.grid_labels[:, :, k], idx=[i, j], state=VoxelLabel.Ceiling, d=5):
                             self.grid_labels[i, j, k] = VoxelLabel.Ceiling
 
-    def floor_refinements(self):
-        zero = -100
-
-        # fill empty floor that has Ceiling over it
-        ceiling_2d_mask = np.any(self.grid_labels == VoxelLabel.Ceiling, axis=2)
-        floor_2d_mask = np.any(self.grid_labels == VoxelLabel.Floor, axis=2)
-
-        fill_mask = np.logical_or(ceiling_2d_mask, floor_2d_mask)
-
-        self.grid_labels[:, :, np.round(self.floor_height).astype(int)][fill_mask] = VoxelLabel.Floor
-
-        # fill occupied voxels on floor level
-        floor_occupied_2d_mask = self.grid_labels[:, :, np.round(self.floor_height).astype(int)] == VoxelLabel.Occupied
-
-        for k in range(np.round(self.floor_height).astype(int), -1, -1):
-            self.grid_labels[:, :, k][floor_occupied_2d_mask] = VoxelLabel.Floor
-
-        # plt.imshow(fill_mask)
+        # pass walls through ceiling
+        wall_2d_mask = np.any(self.grid_labels == VoxelLabel.Wall, axis=2)
+        # plt.imshow(wall_2d_mask)
         # plt.show()
 
-    def wall_detection(self, min_area=2):
+        for k in range(self.dims[2]):
+            ceiling_2d_mask_k = self.grid_labels[:, :, k] == VoxelLabel.Ceiling
+            ceiling_wall_mask = np.logical_and(wall_2d_mask, ceiling_2d_mask_k)
+            if ceiling_wall_mask.any():
+                # plt.imshow(ceiling_wall_mask)
+                # plt.show()
+                self.grid_labels[:, :, k][ceiling_wall_mask] = VoxelLabel.Wall
 
-        def wall_plane_detection_ransac(mask, min_area_=min_area):
-            min_num_of_vox = int(np.round(min_area_ / self.voxel_size**2))
+    def floor_refinements(self):
+
+        ceiling_2d_mask = np.any(self.grid_labels == VoxelLabel.Ceiling, axis=2)
+        wall_2d_mask = np.any(self.grid_labels[:, :, : int(self.dims[2] / 2)] == VoxelLabel.Wall, axis=2)
+
+        # fill empty floor that has Ceiling over it
+        floor_2d_mask = np.any(self.grid_labels == VoxelLabel.Floor, axis=2)
+        fill_mask = np.logical_and(ceiling_2d_mask, 1 - floor_2d_mask)
+        self.grid_labels[:, :, np.round(self.floor_height).astype(int)][fill_mask] = VoxelLabel.Floor
+
+        for k in range(np.round(self.floor_height).astype(int), -1, -1):
+            # fill occupied voxels on floor level
+            floor_occupied_2d_mask = self.grid_labels[:, :, k] == VoxelLabel.Occupied
+            self.grid_labels[:, :, k][floor_occupied_2d_mask] = VoxelLabel.Floor
+
+            # pass walls half height through floor
+            floor_2d_mask_k = self.grid_labels[:, :, k] == VoxelLabel.Floor
+            ceiling_wall_mask = np.logical_and(wall_2d_mask, floor_2d_mask_k)
+            self.grid_labels[:, :, k][ceiling_wall_mask] = VoxelLabel.Wall
+
+        floor_2d_mask = np.any(self.grid_labels == VoxelLabel.Floor, axis=2)
+        plt.imshow(floor_2d_mask)
+        plt.show()
+
+        np.save("floor_2d_mask", floor_2d_mask)
+
+    def wall_detection(self):
+
+        def wall_plane_detection_ransac(mask):
+            min_num_of_vox = int(np.round(MIN_WALL_AREA / self.voxel_size**2))
 
             wall_mask = copy.copy(mask)
 
             while np.sum(wall_mask) > min_num_of_vox:
 
-                (normal, d), inlier_mask = ransac.ransac_voxel_grid(wall_mask=wall_mask, distance_threshold=1.5)
+                (normal, d), inlier_mask = ransac.ransac_voxel_grid(wall_mask=wall_mask, distance_threshold=RANSAC_PLANE_DISTANCE_THRESHOLD)
 
+                # mpla = self.grid_labels[inlier_mask]
                 # self.grid_labels[inlier_mask] = VoxelLabel.plane
                 # self.visualize_grid_state([VoxelLabel.plane])
+                # # self.grid_labels[inlier_mask] = mpla
 
                 if np.sum(inlier_mask) < min_num_of_vox:
                     break
 
                 wall_mask[inlier_mask] = 0
 
-            self.grid_labels[wall_mask] = VoxelLabel.Occupied
+            return wall_mask
 
         horizontal_normal_mask = self.grid_normals == VoxelNormal.Horizontal
 
         labeled_grid, num_labels = nd.label(horizontal_normal_mask, nd.generate_binary_structure(3, 3))
+
+        min_wall_volume = int(np.round(MIN_WALL_SEGMENT_VOLUME / self.voxel_size**3))
 
         for label_id in tqdm(range(1, num_labels + 1), "Wall Detection"):
             segment_mask = labeled_grid == label_id
 
             occupied_volume = np.sum(segment_mask)
 
-            if occupied_volume < int(np.round(0.5 / self.voxel_size**3)):
+            if occupied_volume < min_wall_volume:
                 self.grid_labels[segment_mask] = VoxelLabel.Occupied
                 continue
             self.grid_labels[segment_mask] = VoxelLabel.Wall
 
             # horizontal_normal_2d_mask = np.any(segment_mask, axis=2)
-
             # plt.imshow(horizontal_normal_2d_mask)
             # plt.show()
 
-            wall_plane_detection_ransac(segment_mask)
+            wall_mask = wall_plane_detection_ransac(segment_mask)
 
-        # vertical_normal_2d_mask = np.any(self.grid_labels == VoxelLabel.Wall, axis=2)
-        # plt.imshow(vertical_normal_2d_mask)
-        # plt.show()
+        self.grid_labels[wall_mask] = VoxelLabel.Occupied
 
-        # wall_plane_detection_ransac()
+        wall_2d_mask = np.any(self.grid_labels[:, :, : int(self.dims[2] / 2)] == VoxelLabel.Wall, axis=2)
+        plt.imshow(wall_2d_mask)
+        plt.show()
+
+        np.save("wall_2d_mask", wall_2d_mask)
 
     def wall_refinements(self):
         for i in tqdm(range(self.dims[0]), "Wall Refinement"):
             for j in range(self.dims[1]):
                 for k in range(self.dims[2] - 1, 1, -1):
                     if self.grid_labels[i, j, k] == VoxelLabel.Wall:
-
                         if self.grid_labels[i, j, k - 1] == VoxelLabel.Occupied:
-                            self.grid_labels[i, j, k - 1] = VoxelLabel.Wall
-
-                        if self.grid_labels[i, j, k - 1] == VoxelLabel.Floor:
                             self.grid_labels[i, j, k - 1] = VoxelLabel.Wall
 
     def occupied_detection(self):
@@ -235,10 +260,113 @@ class VoxelGrid:
                         if k > ceiling_height - 1 / self.voxel_size:
                             self.grid_labels[i, j, k] = VoxelLabel.Occupied_air
 
-                        # if self.filter_3d_26([i, j, k], VoxelState.Wall, threshold=1, d=5):
-                        #     self.grid_state[i, j, k] = VoxelState.Wall
-                    # if self.grid_state[i, j, k] == VoxelState.Wall and (k < ceiling_2d_mask[i, j] < np.inf):
-                    #     self.grid_state[i, j, k] = VoxelState.Occupied
+    def object_clustering(self):
+
+        pcd = self.get_centroids_pcd([VoxelLabel.Occupied])
+
+        occupied_idx = np.argwhere(self.grid_labels == VoxelLabel.Occupied)
+        labels = dbscan.dbscan_3d(occupied_idx, eps=OBJECT_CLUSTER_EPS, min_pts=OBJECT_CLUSTER_MIN_PTS)
+
+        for i in range(len(labels)):
+            self.object_clusters[occupied_idx[i, 0], occupied_idx[i, 1], occupied_idx[i, 2]] = labels[i]
+            # self.visualize_grid_state([VoxelLabel.plane])
+
+        # print((labels == labels1).all())
+        # not_object_mask = np.zeros_like(self.grid_labels)
+        # not_object_mask[occupied_idx[np.where(labels < 0)]] = 1
+
+        max_label = labels.max()
+        print(max_label)
+        colors = plt.get_cmap("hsv")(labels / (max_label if max_label > 0 else 1))
+        colors[labels < 0] = 0
+        pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+        # o3d.visualization.draw_geometries([pcd])
+
+    def door_recognition(self):
+        wall_mask = np.any(self.grid_labels[:, :, : int(self.dims[2] / 2)] == VoxelLabel.Wall, axis=2)
+        # plt.imshow(wall_mask)
+        # plt.show()
+
+        # min_num_of_vox = int(np.round(2.5 / self.voxel_size**2))
+
+        # while np.sum(wall_mask) > min_num_of_vox:
+
+        #     (normal, d), inlier_mask = ransac.ransac_voxel_grid(wall_mask=wall_mask, distance_threshold=2)
+
+        #     # projected_grid = project_voxel_grid(wall_mask[inlier_mask], normal, d, (wall_mask, 100))
+
+        #     # plt.imshow(projected_grid)
+        #     # plt.show()
+
+        #     mpla = self.grid_labels[inlier_mask]
+        #     self.grid_labels[inlier_mask] = VoxelLabel.plane
+        #     # self.visualize_grid_state([VoxelLabel.plane])
+
+        #     # mask =
+
+        #     wall_2d_mask = np.any(self.grid_labels == VoxelLabel.plane, axis=0)
+
+        #     plt.imshow(wall_2d_mask)
+        #     plt.show()
+        #     self.grid_labels[inlier_mask] = mpla
+
+        #     if np.sum(inlier_mask) < min_num_of_vox:
+        #         break
+
+        #     wall_mask[inlier_mask] = 0
+
+    def pick_point(self):
+        pcd = self.get_centroids_pcd([VoxelLabel.Floor])
+        print("")
+        print("1) Please pick at least three correspondences using [shift + left click]")
+        print("   Press [shift + right click] to undo point picking")
+        print("2) After picking points, press 'Q' to close the window")
+        vis = o3d.visualization.VisualizerWithEditing()
+        vis.create_window()
+        vis.add_geometry(pcd)
+        vis.run()
+        vis.destroy_window()
+        print("")
+
+        points = vis.get_picked_points()
+
+        points = np.asarray(pcd.points)[points]
+
+        lines = o3d.geometry.LineSet()
+
+        lines.points = o3d.utility.Vector3dVector(points)
+        lines.lines = o3d.utility.Vector2iVector(np.array([[i, i + 1] for i in range(len(points) - 1)]))
+
+        o3d.visualization.draw_geometries([pcd, lines])
+
+    def project_objects(self):
+        # print(self.object_clusters)
+        # print(np.max(self.object_clusters))
+
+        polygons = []
+
+        for k in range(np.max(self.object_clusters)):
+            object_2d_mask = np.any(self.object_clusters == k, axis=2)
+
+            np.save("object2dmask", object_2d_mask)
+
+            # plt.imshow(object_2d_mask.T)
+            # plt.show()
+            polygon = object_polygon(object_2d_mask, OBJECT_POLYGONS_ALPHA)
+
+            if np.any(polygon) != None:
+                polygons.append(polygon)
+
+        # print(polygons)
+
+        np.savez("room_polys", *polygons)
+
+        plt.imshow(np.any(self.object_clusters >= 0, axis=2), cmap="Greys", origin="lower")
+        for poly in polygons:
+            plt.plot(poly[:, 1], poly[:, 0], "b-", label="Resulting Polygon")
+            plt.scatter(poly[:, 1], poly[:, 0], color="blue", label="Polygon Points")
+
+        plt.show()
 
     def filter_2d_8(self, grid, idx, state=None, threshold=1, d=1):
         states_instances_dict = np.zeros((10,))
@@ -361,22 +489,32 @@ class VoxelGrid:
 
         # Visualize the inlier mesh
         o3d.visualization.draw_geometries([inlier_pcd])
+        return inlier_pcd
 
-    def visualize_grid_state(self, states):
-        "visualizes voxel centers that belong to the given states list"
+    def get_centroids_pcd(self, states):
         pcd = o3d.geometry.PointCloud()
         voxel_centers = []
         voxel_colors = []
 
+        color_map = plt.cm.viridis(np.linspace(0, 1, len(states)))[:, :3]
+
         for i in range(self.dims[0]):
             for j in range(self.dims[1]):
                 for k in range(self.dims[2]):
-                    if self.grid_labels[i, j, k] in states:
-                        voxel_colors.append([0, 0, 0])
+                    lbl = self.grid_labels[i, j, k]
+                    if lbl in states:
+
+                        voxel_colors.append(color_map[states.index(lbl)])
                         voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
 
         pcd.points = o3d.utility.Vector3dVector(np.array(voxel_centers))
         pcd.colors = o3d.utility.Vector3dVector(np.array(voxel_colors))
+
+        return pcd
+
+    def visualize_grid_state(self, states):
+        "visualizes voxel centers that belong to the given states list"
+        pcd = self.get_centroids_pcd(states=states)
 
         mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=self.min_bound)
 
@@ -449,15 +587,6 @@ def voxelize_mesh(_mesh):
             if seg.triangle_intersects_voxel(voxel.grid_index, vertices[triangle]):
                 normal = triangle_normals[tri_id]
 
-        # if is_ceiling(normal):
-        #     seg.set_state(voxel.grid_index, VoxelLabel.Ceiling)
-        # elif is_floor(normal):
-        #     seg.set_state(voxel.grid_index, VoxelLabel.Floor)
-        # elif is_wall(normal):
-        #     seg.set_state(voxel.grid_index, VoxelLabel.Wall)
-        # else:
-        #     seg.set_state(voxel.grid_index, VoxelLabel.Occupied)
-
         if abs(normal[2]) > 0.9:
             # seg.set_state(voxel.grid_index, VoxelLabel.Ceiling)
             seg.set_normal(voxel.grid_index, VoxelNormal.Vertical)
@@ -470,11 +599,11 @@ def voxelize_mesh(_mesh):
     reconstruction(seg)
     # seg.extract_inliers_mesh(mesh, VoxelState.Occupied)
     # seg.extract_inliers_mesh(mesh, VoxelState.Wall)
-    seg.extract_inliers_mesh(mesh, VoxelLabel.Ceiling)
+    # seg.extract_inliers_mesh(mesh, VoxelLabel.Ceiling)
     # seg.extract_inliers_mesh(mesh, VoxelState.Floor)
 
 
-def voxelize_pcd(pcd, voxel_size=0.05):
+def voxelize_pcd(pcd, voxel_size=VOXEL_SIZE):
     print("####_VOXELIZE_POINTCLOUD_####")
 
     room_pcd = copy.deepcopy(pcd)
@@ -496,7 +625,7 @@ def voxelize_pcd(pcd, voxel_size=0.05):
 
         # Find the points within this voxel
         voxel_center = np.array(voxel_grid.get_voxel_center_coordinate(voxel_index))
-        _, idx = point_cloud_tree.query(voxel_center, 50)
+        _, idx = point_cloud_tree.query(voxel_center, 20)
         point_indices_mask = np.all(np.floor((points[idx] - np.asarray(voxel_grid.origin)) / voxel_size) == voxel_index, axis=1).astype(int)
 
         if len(point_indices_mask) > 0:
@@ -504,18 +633,16 @@ def voxelize_pcd(pcd, voxel_size=0.05):
             normal /= np.linalg.norm(normal)  # Normalize the mean normal
 
             if abs(normal[2]) > 0.9:
-                # seg.set_state(voxel.grid_index, VoxelLabel.Ceiling)
                 seg.set_normal(voxel.grid_index, VoxelNormal.Vertical)
             elif abs(normal[2]) < 0.1:
-                # seg.set_state(voxel.grid_index, VoxelLabel.Wall)
                 seg.set_normal(voxel.grid_index, VoxelNormal.Horizontal)
             else:
                 seg.set_state(voxel.grid_index, VoxelLabel.Occupied)
 
     reconstruction(seg)
 
-    seg.extract_inliers_pcd(room_pcd, VoxelLabel.Occupied)
-    seg.extract_inliers_pcd(room_pcd, VoxelLabel.Wall)
+    # seg.extract_inliers_pcd(room_pcd, VoxelLabel.Occupied)
+    # seg.extract_inliers_pcd(room_pcd, VoxelLabel.Wall)
     # seg.extract_inliers_pcd(room_pcd, VoxelState.Ceiling)
     # seg.extract_inliers_pcd(room_pcd, VoxelLabel.Floor)
 
@@ -528,19 +655,31 @@ def reconstruction(voxelgrid: VoxelGrid):
     voxelgrid.wall_detection()
 
     # refinements
+    # voxelgrid.visualize_grid_state([VoxelLabel.Wall, VoxelLabel.Floor, VoxelLabel.Ceiling])
     voxelgrid.ceiling_refinements()
     voxelgrid.floor_refinements()
     voxelgrid.wall_refinements()
+    # voxelgrid.visualize_grid_state([VoxelLabel.Wall, VoxelLabel.Floor, VoxelLabel.Ceiling])
 
+    # voxelgrid.visualize_grid_state([VoxelLabel.Occupied])
     voxelgrid.occupied_detection()
+    # voxelgrid.visualize_grid_state([VoxelLabel.Occupied])
 
     print("####_RECONSTRUCTION_DONE_####")
-    voxelgrid.visualize_grid_state([VoxelLabel.Ceiling])
-    voxelgrid.visualize_grid_state([VoxelLabel.Occupied])
-    voxelgrid.visualize_grid_state([VoxelLabel.Wall])
-    voxelgrid.visualize_grid_state([VoxelLabel.Floor])
 
-    voxelgrid.visualize_grid()
+    voxelgrid.object_clustering()
+    # voxelgrid.door_recognition()
+
+    # voxelgrid.pick_point()
+
+    voxelgrid.project_objects()
+
+    # voxelgrid.visualize_grid_state([VoxelLabel.Ceiling])
+    # voxelgrid.visualize_grid_state([VoxelLabel.Occupied])
+    # voxelgrid.visualize_grid_state([VoxelLabel.Wall, VoxelLabel.Floor, VoxelLabel.Occupied])
+    # voxelgrid.visualize_grid_state([VoxelLabel.Floor])
+
+    # voxelgrid.visualize_grid()
 
 
 if __name__ == "__main__":
@@ -561,12 +700,14 @@ if __name__ == "__main__":
     # print("A3 - Mesh Sampling")
     # room_pcd = uniform_sample.sample_mesh_uniformly(room_mesh, int(1e6))
     room_pcd = o3d.io.read_point_cloud("dataset/area_1/RoomPointCloud_1e6.ply")
-    # room_pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/office_6/office_6.txt", format="xyz")
+    # room_pcd = o3d.io.read_point_cloud("dataset/Stanford3dDataset_v1.2/Area_3/office_1/office_1.txt", format="xyz")
+    # room_pcd = o3d.io.read_point_cloud("dataset/Stanford3dDataset_v1.2/Area_1/conferenceRoom_1/conferenceRoom_1.txt", format="xyz")
+    # room_pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/conferenceRoom_1/conferenceRoom_1.txt", format="xyz")
     # o3d.visualization.draw_geometries([room_pcd])
 
     # # A4
     # print("A4 - PointCloud plane detection")
 
     start = time.time()
-    voxelize_pcd(room_pcd, 0.07)
+    voxelize_pcd(room_pcd, 0.05)
     print("PCD-voxels time: ", time.time() - start)
