@@ -19,10 +19,12 @@ def get_next_vert(i, polygon, direction=1):
     return i, polygon.exterior.coords[i]
 
 
-def get_closest_intersection(p1, p2, polygon: Polygon):
+def get_closest_intersection(p1, p2, polygons):
     p1p2 = LineString([p1, p2])
 
-    intersections = p1p2.intersection(polygon)
+    intersections = p1p2.intersection(polygons)
+
+    # print(intersections)
 
     # Start point of the line
     start_point = Point(p1)
@@ -72,14 +74,19 @@ def total_distance(points):
     return total_dist
 
 
-def visibility_path(p1, p2, polygons: Polygon):
+def visibility_path(p1, p2, polygons: Polygon, d=0):
+    print("")
+    print("visipath", p1, p2, d)
 
     path = np.array([p1])
     distance = 0
 
     closest_intersection = get_closest_intersection(p1, p2, polygons)
 
-    # print(closest_intersection)
+    if d == 5:
+        closest_intersection = None
+
+    print("closest intersection :", closest_intersection)
 
     if closest_intersection != None:
         # find intersecting polygon
@@ -92,48 +99,52 @@ def visibility_path(p1, p2, polygons: Polygon):
             edge = LineString([polygon.exterior.coords[i], polygon.exterior.coords[i + 1]])
 
             # a = edge.line_locate_point(closest_intersection)
+            if p1 == polygon.exterior.coords[i]:  # and (p2 != polygon.exterior.coords[i + 1] or p2 != polygon.exterior.coords[i - 1]):
+                print("praaa")
+                icw, vcw = get_next_vert(i, polygon, 1)
+                iccw, vccw = get_next_vert(i, polygon, -1)
+                break
+            elif edge.distance(closest_intersection) < DISTANCE_TOLERANCE:
 
-            if edge.distance(closest_intersection) < DISTANCE_TOLERANCE:
                 icw, vcw = get_next_vert(i, polygon, 1)
                 iccw = i
                 vccw = polygon.exterior.coords[iccw]
-                vcw_path, _ = visibility_path(p1, vcw, polygons)
-                vccw_path, _ = visibility_path(p1, vccw, polygons)
-                pathcw = np.vstack((path, vcw_path))
-                pathccw = np.vstack((path, vccw_path))
+                print(vcw, vccw)
                 break
+
+        pathcw = np.vstack((path, vcw))
+        pathccw = np.vstack((path, vccw))
 
         vcwp2 = LineString([vcw, p2])
         vccwp2 = LineString([vccw, p2])
 
         while vcwp2.crosses(polygon):
             icw, vcw = get_next_vert(icw, polygon, 1)
-            vcwp2 = LineString([vcw, p2])
             pathcw = np.vstack((pathcw, vcw))
 
-            # for p in reversed(path):
-            # print(p)
-            # p = p1
-            # p1v = LineString([p, vcw])
-            # if not p1v.crosses(polygon):
-            #     p1vpath, p1vdist = visibility_path(p, vcw, polygons)
-            #     if p1vdist < total_distance(pathcw):
-            #         pathcw = p1vpath
+            if not polygon.contains(LineString([p1, vcw])):
+                p1vpath, p1vdist = visibility_path(p1, vcw, polygons, [p1, p2, "p1,v"])
+                if p1vdist < total_distance(pathcw):
+                    pathcw = p1vpath
+
+            vcwp2 = LineString([vcw, p2])
 
         while vccwp2.crosses(polygon):
             iccw, vccw = get_next_vert(iccw, polygon, -1)
             vccwp2 = LineString([vccw, p2])
             pathccw = np.vstack((pathccw, vccw))
 
-            # p = p1
-            # p1vccw = LineString([p, vccw])
-            # if not p1vccw.crosses(polygon):
-            #     p1vpath, p1vdist = visibility_path(p, vccw, polygons)
-            #     if p1vdist < total_distance(pathccw):
-            #         pathccw = p1vpath
+            # if polygon.contains(vccwp2):
+            #     iccw, vccw = get_next_vert(iccw, polygon, 1)
+            #     vccwp2 = LineString([vccw, p2])
+            #     pathcw = np.vstack((pathcw, vccw))
+            if not polygon.contains(LineString([p1, vccw])):
+                p1vpath, p1vdist = visibility_path(p1, vccw, polygons, [p1, p2, "p1,v"])
+                if p1vdist < total_distance(pathccw):
+                    pathccw = p1vpath
 
-        path_cw, dist_cw = visibility_path(vcw, p2, polygons)
-        path_ccw, dist_ccw = visibility_path(vccw, p2, polygons)
+        path_cw, dist_cw = visibility_path(vcw, p2, polygons, [p1, p2, "v,p2"])
+        path_ccw, dist_ccw = visibility_path(vccw, p2, polygons, [p1, p2, "v,p2"])
 
         path_cw = np.delete(path_cw, 0, axis=0)
         path_ccw = np.delete(path_ccw, 0, axis=0)
@@ -146,12 +157,20 @@ def visibility_path(p1, p2, polygons: Polygon):
         else:
             path = pathccw
 
-        # path = pathccw
+        # path = pathcw
 
     else:
         path = np.vstack((path, p2))
+        distance = total_distance(path)
 
-    distance = total_distance(path)
+        for poly in polygons:
+            if poly.contains(LineString([p1, p2])):
+                distance = float("inf")
+
+    print("visipath_end", p1, p2, d)
+    print(path)
+    print(distance)
+    # print("")
 
     return path.astype(float), distance
 
@@ -181,7 +200,7 @@ if __name__ == "__main__":
     polygons = []
     path = []
 
-    start = (7, 0)
+    start = (0, 60)
     end = (80, 60)
 
     shapes = np.load("dataset/myfiles/room_polys.npz")
@@ -198,19 +217,25 @@ if __name__ == "__main__":
     for poly in merged_polygon.geoms:
         polygons.append(poly)
 
-    # polygon1 = Polygon([(1, 1), (5, 1), (10, 5), (5, 4), (2, 3), (1, 4), (1, 1)])
-    # # polygon2 = Polygon([(6, 2), (9, 2), (9, 4.5), (6, 4.5), (6, 2)])
-    # # polygon3 = Polygon([(2, 5), (4, 5), (4, 7), (2, 7), (2, 5)])
+    polygon1 = Polygon([(1, 1), (5, 1), (5.5, 5), (5, 4), (2, 3), (1, 10), (1, 1)])
+    polygon2 = Polygon([(6, 2), (9, 2), (9, 4.5), (8, 5), (6, 4.5), (6, 2)])
+    polygon3 = Polygon([(2, 5), (4, 5), (4, 7), (2, 7), (2, 5)])
 
-    # polygons = [polygon1]
+    polygons = [polygon1, polygon2, polygon3]
 
-    # start = (0, 2.5)
-    # end = (8, 2.5)
+    start = (0, 0)
+    end = (8.5, 5)
+
+    # line = LineString([start, (5, 4)])
+
+    # print(line.crosses(polygon1))
+    # print(polygon1.crosses(Point((1, 2))))
 
     tm = time()
     path, dist = visibility_path(start, end, polygons)
-    print(path)
-    print(dist)
+    # path = np.vstack((path, start))
+    # print(path)
+    # print(dist)
     print("computation time = ", time() - tm)
 
     plot_visibility_path(polygons, path)
