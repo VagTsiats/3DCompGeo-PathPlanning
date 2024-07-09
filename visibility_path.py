@@ -83,26 +83,26 @@ def total_distance(points):
 
 def visibility_path(p1, p2, polygons: Polygon, d=0):
     # print("")
-    # print("visipath", p1, p2, d)
+    print("visipath", p1, p2, d)
 
     path = np.array([p1])
 
     closest_intersection = get_closest_intersection(p1, p2, polygons)
 
-    if d == 10:
+    if d == 5:
         closest_intersection = None
 
-    # print("closest intersection :", closest_intersection)
+    print("closest intersection :", closest_intersection)
 
-    for poly in polygons:
-        if poly.intersects(Point(p1)) or poly.intersects(Point(p2)):
-            polygon = poly
-            break
+    # for poly in polygons:
+    #     if poly.intersects(Point(p1)) or poly.intersects(Point(p2)):
+    #         polygon = poly
+    #         break
 
     if closest_intersection != None:
         # find intersecting polygon
         for poly in polygons:
-            if poly.distance(closest_intersection) < DISTANCE_TOLERANCE:
+            if poly.distance(closest_intersection) < DISTANCE_TOLERANCE and not poly.contains(closest_intersection):
                 polygon = poly
                 break
 
@@ -134,7 +134,7 @@ def visibility_path(p1, p2, polygons: Polygon, d=0):
             for i in range(len(p1_vcw_path) - 2, -1, -1):
                 p_vcw_line = LineString([p1_vcw_path[i], vcw])
 
-                if not polygon.crosses(p_vcw_line) and not polygon.contains(p_vcw_line):
+                if not polygon.crosses(p_vcw_line) and not polygon.contains(p_vcw_line):  # ayto to gamidi
                     p_vcw_path = visibility_path(tuple(p1_vcw_path[i]), vcw, polygons, d + 1)
                     p_vcw_path = np.vstack((p1_vcw_path[:i], p_vcw_path))
 
@@ -212,7 +212,7 @@ def plot_visibility_path(polygons, path):
     for i in range(len(path) - 1):
         x_values = [path[i][0], path[i + 1][0]]
         y_values = [path[i][1], path[i + 1][1]]
-        ax.plot(x_values, y_values, color="red", linestyle="--")
+        ax.plot(x_values, y_values, color="green", linestyle="--")
 
     ax.set_aspect("equal", "box")
     plt.show()
@@ -222,8 +222,8 @@ if __name__ == "__main__":
     polygons = []
     path = []
 
-    end = (240, 80)
-    start = (210, 130)
+    end = (150, 120)
+    start = (180, 100)
 
     # shapes = np.load("dataset/myfiles/room_polys.npz")
     shapes = np.load("room_polys.npz")
@@ -244,38 +244,30 @@ if __name__ == "__main__":
     for poly in merged_polygon.geoms:
         polygons.append(poly)
 
-    result = polygons[0]
+    # result = polygons[0]
 
-    for poly in polygons[1:]:
-        result = result.difference(poly)
+    # for poly in polygons[1:]:
+    #     result = result.difference(poly)
 
-    if isinstance(result, GeometryCollection):
-        # Extract only Polygon geometries from the GeometryCollection
-        result = [geom for geom in result.geoms if isinstance(geom, Polygon)]
+    # if isinstance(result, GeometryCollection):
+    #     # Extract only Polygon geometries from the GeometryCollection
+    #     result = [geom for geom in result.geoms if isinstance(geom, Polygon)]
 
-        # If there's more than one resulting polygon, you may want to merge them
-        # if result:
-        #     result = unary_union(result)
-        # else:
-        #     result = None
+    # for poly in polygons[:1]:
+    #     result.append(poly)
 
-    # print(result)
+    # polygons = result
 
-    for poly in polygons[:1]:
-        result.append(poly)
+    # print(polygons)
 
-    polygons = result
+    polygon_box = Polygon([(0, 0), (4, 0), (5, 6), (6, 0), (10, 0), (10, 10), (0, 10), (0, 0)])
+    polygon1 = Polygon([(1, 1), (3, 4.5), (1, 4), (1, 1)])
+    polygon2 = Polygon([(6, 2), (8, 2), (7, 5)])
 
-    print(polygons)
+    polygons = [polygon_box, polygon1, polygon2]
 
-    # polygon_box = Polygon([(0, 0), (4, 0), (5, 6), (6, 0), (10, 0), (10, 10), (0, 10), (0, 0)])
-    # polygon1 = Polygon([(1, 1), (3, 4.5), (1, 4), (1, 1)])
-    # polygon2 = Polygon([(6, 2), (8, 2), (7, 5)])
-
-    # polygons = [polygon_box, polygon1, polygon2]
-
-    # start = (0.5, 1)
-    # end = (8, 1)
+    start = (0.5, 1)
+    end = (8, 1)
 
     # line = LineString([start, end])
     # p = Point((5, 0))
@@ -291,10 +283,10 @@ if __name__ == "__main__":
     # print(cliscks)
 
     tm = time()
-    # path = visibility_path(start, end, polygons)
+    path = visibility_path(start, end, polygons)
     # path = np.vstack((path, start))
     # print(path)
     # print(dist)
     print("computation time = ", time() - tm)
 
-    plot_visibility_path([polygons[0]], path)
+    plot_visibility_path(polygons, path)
