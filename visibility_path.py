@@ -3,11 +3,9 @@ from shapely.geometry import *
 from shapely.ops import unary_union
 import matplotlib.pyplot as plt
 
-from time import time
+import time
 
 DISTANCE_TOLERANCE = 1e-6
-
-fig, ax = plt.subplots()
 
 
 def get_next_vert(i, polygon, direction=1):
@@ -182,6 +180,8 @@ def visibility_path(p1, p2, polygons, map: Polygon = None, d=0):
 
 def plot_visibility_path(polygons, path):
 
+    fig, ax = plt.subplots()
+
     # Plot polygons
     for i, poly in enumerate(polygons):
         x, y = poly.exterior.xy
@@ -231,12 +231,30 @@ def remove_collinear_points(polygon):
     return Polygon(non_collinear_coords)
 
 
+def polygons_preprocessing(polygon_points):
+
+    polygons = []
+
+    for poly in polygon_points:
+        polygons.append(Polygon(poly))
+
+    merged_polygon = unary_union(polygons)
+
+    polygons = []
+
+    for poly in merged_polygon.geoms:
+        poly = remove_collinear_points(poly)
+        polygons.append(poly)
+
+    return polygons
+
+
 if __name__ == "__main__":
     polygons = []
     path = []
 
-    start = (0, 0)
-    end = (100, 70)
+    start = (15, 8)
+    end = (35, 10)
 
     shapes = np.load("dataset/myfiles/object_polys_room1.npz")
 
@@ -273,11 +291,11 @@ if __name__ == "__main__":
     # start = (0.5, 1)
     # end = (8, 1)
 
-    tm = time()
+    tm = time.time()
     path = visibility_path(start, end, polygons)
     # path = np.vstack((path, start))
     print(path)
     # print(dist)
-    print("computation time = ", time() - tm)
+    print("computation time = ", time.time() - tm)
 
     plot_visibility_path(polygons, path)

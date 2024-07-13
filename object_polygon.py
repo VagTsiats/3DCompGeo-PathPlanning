@@ -1,5 +1,7 @@
 import numpy as np
 import alphashape
+from scipy.ndimage import sobel
+import cv2
 
 import matplotlib.pyplot as plt
 
@@ -35,18 +37,18 @@ def remove_collinear_points(polygon):
     return np.array(cleaned_polygon)
 
 
-def object_polygon(grid, alpha):
+def object_polygon(grid, alpha=None):
 
     occupied_cells = np.argwhere(grid == 1)
 
     try:
         polygon = alphashape.alphashape(occupied_cells, alpha)
 
-        shape = np.array(polygon.exterior.coords, int)
+        polygon = np.array(polygon.exterior.coords, int)
     except:
         return None
 
-    polygon = remove_collinear_points(shape)
+    polygon = remove_collinear_points(polygon)
 
     return polygon
 
@@ -66,13 +68,35 @@ def visualize(polygon):
 
 if __name__ == "__main__":
 
-    # Define the occupancy grid
-    grid = np.zeros((20, 20), dtype=int)
-    grid[5:15, 8:12] = 1  # Obstacle
-    grid[9:11, 2:25] = 1
-    # grid[7:13, 4:18] = 1
-
     grid = np.load("object2dmask.npy")
 
-    poly = object_polygon(grid, 0.2)
+    grid = grid[:][150:]
+
+    binary_grid = (grid == 1).astype(np.uint8) * 255  # Multiply by 255 to get a proper binary image for OpenCV
+
+    # Find contours
+    contours, _ = cv2.findContours(binary_grid, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Create an empty image to draw contours
+    contour_image = np.zeros_like(binary_grid)
+
+    # Draw contours on the empty image
+    cv2.drawContours(contour_image, contours, -1, (255), 1)
+
+    # Plot the original occupancy grid and the contour image
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+    plt.title("Original Occupancy Grid")
+    plt.imshow(binary_grid, cmap="gray")
+    plt.axis("off")
+
+    plt.subplot(1, 2, 2)
+    plt.title("Obstacle Borders")
+    plt.imshow(contour_image, cmap="gray")
+    plt.axis("off")
+
+    plt.show()
+
+    poly = object_polygon(grid)
     visualize(poly)

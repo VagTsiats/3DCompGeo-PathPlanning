@@ -57,9 +57,7 @@ def sample_mesh_uniformly(mesh, num_samples):
     return sampled_points_pcd
 
 
-# if __name__ == "__main__":
-#     mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
-
-#     sampled_points_pcd = sample_mesh_uniformly(mesh, (int)(1e7))
-
-#     o3d.io.write_point_cloud("dataset/area_1/RoomPointCloud_1e7.ply", sampled_points_pcd)
+if __name__ == "__main__":
+    mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
+    sampled_points_pcd = sample_mesh_uniformly(mesh, (int)(1e7))
+    o3d.io.write_point_cloud("dataset/area_1/RoomPointCloud_1e7.ply", sampled_points_pcd)

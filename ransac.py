@@ -17,7 +17,10 @@ def fit_plane(points):
     normal = np.cross(v1, v2)
 
     # Normalize the normal vector
-    normal = normal / np.linalg.norm(normal)
+    try:
+        normal = normal / np.linalg.norm(normal)
+    except:
+        pass
 
     # Return the normal and a point on the plane
     return normal, points[0]
