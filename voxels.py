@@ -9,9 +9,8 @@ import uniform_sample
 import time
 import ransac
 import dbscan
-from object_polygon import object_polygon
-import visibility_path
-
+import contours_polygon as cp
+import visibility_path as vp
 from definitions import *
 
 
@@ -22,6 +21,9 @@ class VoxelLabel:
     Ceiling = 3
     Floor = 4
     Wall = 5
+
+    # used for visualization
+    DarkFloor = 100
     plane = 10
 
 
@@ -47,8 +49,6 @@ class VoxelGrid:
         self.grid_normals = np.ones(self.dims, dtype=int) * (VoxelNormal.Undefined)
         self.object_clusters = np.ones(self.dims, dtype=int) * (-2)
         self.floor_path_planning = np.zeros_like(self.grid_labels)
-
-        self.object_polygons = []
 
         self.floor_height = 0
 
@@ -261,6 +261,8 @@ class VoxelGrid:
         occupied_idx = np.argwhere(self.grid_labels == VoxelLabel.Occupied)
         labels = dbscan.dbscan_3d(occupied_idx, eps=OBJECT_CLUSTER_EPS, min_pts=OBJECT_CLUSTER_MIN_PTS)
 
+        print(np.asarray(labels))
+
         for i in range(len(labels)):
             self.object_clusters[occupied_idx[i, 0], occupied_idx[i, 1], occupied_idx[i, 2]] = labels[i]
 
@@ -300,35 +302,11 @@ class VoxelGrid:
             wall_mask[inlier_mask] = 0
 
     def project_objects(self):
-        # print(self.object_clusters)
-        # print(np.max(self.object_clusters))
-        self.object_polygons = []
 
-        for k in range(np.max(self.object_clusters)):
+        for k in range(np.max(self.object_clusters) + 1):
             object_2d_mask = np.any(self.object_clusters[:, :, :POINT_HEIGHT] == k, axis=2)
 
-            # np.save("object2dmask", object_2d_mask)
-
             self.floor_path_planning[object_2d_mask] = 0
-
-            # plt.imshow(object_2d_mask.T)
-            # plt.show()
-            polygon = object_polygon(object_2d_mask, OBJECT_POLYGONS_ALPHA)
-
-            if np.any(polygon) != None:
-                self.object_polygons.append(polygon)
-
-        # print(self.object_polygons)
-        # np.savez("room_polys", *polygons)
-
-        # draw object polygons
-        # plt.imshow(np.any(self.object_clusters[:, :, :POINT_HEIGHT] >= 0, axis=2), cmap="Greys", origin="lower")
-        # for poly in self.polygons:
-        #     plt.plot(poly[:, 1], poly[:, 0], "b-", label="Resulting Polygon")
-        #     plt.scatter(poly[:, 1], poly[:, 0], color="blue", label="Polygon Points")
-        # plt.show()
-
-    def pick_point(self):
 
         labeled_array, num_features = nd.label(self.floor_path_planning)
 
@@ -347,18 +325,19 @@ class VoxelGrid:
         # Create a new grid with only the largest component
         self.floor_path_planning = largest_component_mask.astype(int)
 
+    def pick_point(self):
+
         pcd = self.get_centroids_pcd(self.floor_path_planning, [1])
 
         print("")
+        print("Path Planing")
         print("1) Please pick at least 2 correspondences using [shift + left click]")
         print("   Press [shift + right click] to undo point picking")
-        print("2) After picking points, press 'Q' to close the window")
         vis = o3d.visualization.VisualizerWithEditing()
         vis.create_window()
         vis.add_geometry(pcd)
         vis.run()
         vis.destroy_window()
-        print("")
 
         points = vis.get_picked_points()
         points = np.asarray(pcd.points)[points]
@@ -371,37 +350,50 @@ class VoxelGrid:
 
         points = self.pick_point()
 
-        polygons = visibility_path.polygons_preprocessing(self.object_polygons)
+        floor_path_planning_2d = np.any(self.floor_path_planning, axis=2)
+        # plt.imshow(floor_path_planning_2d)
+        # plt.show()
+
+        np.save("floor_2d_path", floor_path_planning_2d)
+
+        polygon = cp.get_floor_polygon(floor_path_planning_2d.T)
+
+        print(len(polygon.exterior.coords))
+
+        # print(polygon)
 
         path = points[0]
 
         for i in range(len(points) - 1):
             try:
-                comp_path = visibility_path.visibility_path(tuple(points[i]), tuple(points[i + 1]), polygons)
+                comp_path = vp.visibility_path(tuple(points[i]), tuple(points[i + 1]), polygon)
                 path = np.vstack((path, comp_path))
-
             except:
-                print(
-                    " Unable to Compute Path between:",
-                )
+                print(" Unable to Compute Path between:", points[i], points[i + 1])
                 return
 
-        visibility_path.plot_visibility_path(polygons, path)
+        # vp.plot_visibility_path(polygon, path)
 
         path = np.hstack((path, np.ones((path.shape[0], 1)) * np.round(self.floor_height))).astype(int)
 
-        print("Computed Path:")
-        print(path)
-
         path = self.get_voxel_center(path)
 
-        lines = o3d.geometry.LineSet()
+        dist = vp.total_distance(path)
 
+        print("Computed Path (", dist, ") :")
+        print(path)
+
+        lines = o3d.geometry.LineSet()
         lines.points = o3d.utility.Vector3dVector(path)
         lines.lines = o3d.utility.Vector2iVector(np.array([[i, i + 1] for i in range(len(path) - 1)]))
 
-        # pcd = self.get_centroids_pcd(self.floor_path_planning, [1])
-        # o3d.visualization.draw_geometries([pcd, lines])
+        mpla = self.grid_labels
+        self.grid_labels[self.floor_path_planning == 1] = VoxelLabel.DarkFloor
+
+        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.Occupied, VoxelLabel.DarkFloor], [lines])
+
+        self.grid_labels = mpla
+
         return lines
 
     def filter_2d_8(self, grid, idx, state=None, threshold=1, d=1):
@@ -573,6 +565,12 @@ class VoxelGrid:
                         voxel_colors.append([1, 0, 0])
                         voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
                     if self.grid_labels[i, j, k] == VoxelLabel.Floor and ((VoxelLabel.Floor in states and st == True) or st == False):
+                        if VoxelLabel.DarkFloor in states:
+                            voxel_colors.append([0, 0.5, 0])
+                        else:
+                            voxel_colors.append([0, 1, 0])
+                        voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
+                    if self.grid_labels[i, j, k] == VoxelLabel.DarkFloor and (VoxelLabel.DarkFloor in states and st == True):
                         voxel_colors.append([0, 1, 0])
                         voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
                     if self.grid_labels[i, j, k] == VoxelLabel.Wall and ((VoxelLabel.Wall in states and st == True) or st == False):
@@ -691,7 +689,7 @@ def reconstruction(voxelgrid: VoxelGrid):
     voxelgrid.ceiling_floor_detection()
     voxelgrid.wall_detection()
 
-    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall])
+    # voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall])
 
     # refinements
     voxelgrid.ceiling_refinements()
@@ -699,8 +697,8 @@ def reconstruction(voxelgrid: VoxelGrid):
     voxelgrid.wall_refinements()
     voxelgrid.occupied_refinement()
 
-    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall])
-    voxelgrid.visualize_grid()
+    # voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall])
+    # voxelgrid.visualize_grid()
 
     print("####_RECONSTRUCTION_DONE_####")
 
@@ -708,13 +706,13 @@ def reconstruction(voxelgrid: VoxelGrid):
 
     # voxelgrid.door_recognition()
 
+    # voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Occupied])
+    # voxelgrid.visualize_grid([VoxelLabel.Floor])
     voxelgrid.project_objects()
 
     while True:
 
         line_path = voxelgrid.path_planning()
-
-        voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall, VoxelLabel.Occupied], [line_path])
 
     # voxelgrid.visualize_grid_state([VoxelLabel.Ceiling])
     # voxelgrid.visualize_grid_state([VoxelLabel.Occupied])
@@ -729,8 +727,8 @@ if __name__ == "__main__":
 
     # # A1
     # print("A1 - load room mesh")
-    room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
-    o3d.visualization.draw_geometries([room_mesh])
+    # room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
+    # o3d.visualization.draw_geometries([room_mesh])
 
     # # A2
     # print("A2 - Mesh room objects ")

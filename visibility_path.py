@@ -2,6 +2,7 @@ import numpy as np
 from shapely.geometry import *
 from shapely.ops import unary_union
 import matplotlib.pyplot as plt
+import contours_polygon as cp
 
 import time
 
@@ -11,20 +12,18 @@ DISTANCE_TOLERANCE = 1e-6
 def get_next_vert(i, polygon, direction=1):
     i = i + direction
 
-    if i > len(polygon.exterior.coords) - 2:
+    if i > len(polygon.coords) - 2:
         i = 0
     elif i < 0:
-        i = len(polygon.exterior.coords) - 2
+        i = len(polygon.coords) - 2
 
-    return i, polygon.exterior.coords[i]
+    return i, polygon.coords[i]
 
 
 def get_closest_intersection(p1, p2, polygons):
     p1p2 = LineString([p1, p2])
 
-    intersections = p1p2.intersection(polygons)
-
-    # print(intersections)
+    intersection = p1p2.intersection(polygons)
 
     # Start point of the line
     start_point = Point(p1)
@@ -33,25 +32,22 @@ def get_closest_intersection(p1, p2, polygons):
     # Extract intersection points
     intersection_points = []
 
-    for intersection in intersections:
-        # if isinstance(intersection, Point):
-        #     intersection_points.append(intersection)
-        if isinstance(intersection, MultiPoint):
-            intersection_points.extend(intersection.geoms)
-        elif isinstance(intersection, LineString):
-            intersection_points.extend([Point(coord) for coord in intersection.coords])
-        elif isinstance(intersection, MultiLineString):
-            for geom in intersection.geoms:
-                if isinstance(geom, LineString):
-                    intersection_points.extend([Point(coord) for coord in geom.coords])
+    if isinstance(intersection, MultiPoint):
+        intersection_points.extend(intersection.geoms)
+    elif isinstance(intersection, LineString):
+        intersection_points.extend([Point(coord) for coord in intersection.coords])
+    elif isinstance(intersection, MultiLineString):
+        for geom in intersection.geoms:
+            if isinstance(geom, LineString):
+                intersection_points.extend([Point(coord) for coord in geom.coords])
 
-        elif isinstance(intersection, GeometryCollection):
-            # If the intersection is a collection, extract points from the collection
-            for geom in intersection.geoms:
-                if isinstance(geom, Point):
-                    intersection_points.append(geom)
-                elif isinstance(geom, LineString):
-                    intersection_points.extend([Point(coord) for coord in geom.coords])
+    elif isinstance(intersection, GeometryCollection):
+        # If the intersection is a collection, extract points from the collection
+        for geom in intersection.geoms:
+            if isinstance(geom, Point):
+                intersection_points.append(geom)
+            elif isinstance(geom, LineString):
+                intersection_points.extend([Point(coord) for coord in geom.coords])
 
     # Find the closest intersection point to the start of the line
     closest_point = None
@@ -79,58 +75,63 @@ def total_distance(points):
     return total_dist
 
 
-def visibility_path(p1, p2, polygons, map: Polygon = None, d=0):
+def visibility_path(p1, p2, polygon_with_holes, d=0):
     # print("")
     # print("visipath", p1, p2, d)
 
     path = np.array([p1])
-    p1p2_line = LineString([p1, p2])
+    # p1p2_line = LineString([p1, p2])
 
-    closest_intersection = get_closest_intersection(p1, p2, polygons)
+    closest_intersection = get_closest_intersection(p1, p2, polygon_with_holes)
 
     # print("closest intersection :", closest_intersection)
 
     if d == 5:
         closest_intersection = None
 
+    linearrings = [polygon_with_holes.exterior] + list(polygon_with_holes.interiors)
+
+    # print(linearrings)
+
     if closest_intersection != None:
         # find intersecting polygon
-        for poly in polygons:
-            if poly.distance(closest_intersection) < DISTANCE_TOLERANCE:  # and poly.contains(p1p2_line):
-                polygon = poly
+        for poly in linearrings:
+            if poly.distance(closest_intersection) < DISTANCE_TOLERANCE:
+                ring = poly
                 break
 
-        print(polygon)
+        # print(ring)
 
         # find intersecting edge of polygon
-        for i in range(len(polygon.exterior.coords) - 1):
-            edge = LineString([polygon.exterior.coords[i], polygon.exterior.coords[i + 1]])
+        for i in range(len(ring.coords) - 1):
+            edge = LineString([ring.coords[i], ring.coords[i + 1]])
 
-            if p1 == polygon.exterior.coords[i]:
-                icw, vcw = get_next_vert(i, polygon, 1)
-                iccw, vccw = get_next_vert(i, polygon, -1)
+            if p1 == ring.coords[i]:
+                icw, vcw = get_next_vert(i, ring, 1)
+                iccw, vccw = get_next_vert(i, ring, -1)
                 break
             elif edge.distance(closest_intersection) < DISTANCE_TOLERANCE:
-                icw, vcw = get_next_vert(i, polygon, 1)
+                icw, vcw = get_next_vert(i, ring, 1)
                 iccw = i
-                vccw = polygon.exterior.coords[iccw]
+                vccw = ring.coords[iccw]
                 break
 
-        p1_vcw_path = visibility_path(p1, vcw, polygons, map, d + 1)
-        p1_vccw_path = visibility_path(p1, vccw, polygons, map, d + 1)
+        p1_vcw_path = visibility_path(p1, vcw, polygon_with_holes, d + 1)
+        p1_vccw_path = visibility_path(p1, vccw, polygon_with_holes, d + 1)
 
         vcw_p2_line = LineString([vcw, p2])
         vccw_p2_line = LineString([vccw, p2])
 
-        while vcw_p2_line.crosses(polygon):  # or polygon.contains(vcw_p2_line):
-            icw, vcw = get_next_vert(icw, polygon, 1)
+        while vcw_p2_line.crosses(ring):
+            icw, vcw = get_next_vert(icw, ring, 1)
             p1_vcw_path = np.vstack((p1_vcw_path, vcw))
 
             for i in range(len(p1_vcw_path) - 2, -1, -1):
                 p_vcw_line = LineString([p1_vcw_path[i], vcw])
 
-                if not polygon.crosses(p_vcw_line) and not polygon.contains(p_vcw_line):  # ayto to gamidi
-                    p_vcw_path = visibility_path(tuple(p1_vcw_path[i]), vcw, polygons, d + 1)
+                if not p_vcw_line.crosses(ring) and polygon_with_holes.contains(p_vcw_line):  # ayto to gamidi
+                    # print("mpla")
+                    p_vcw_path = visibility_path(tuple(p1_vcw_path[i]), vcw, polygon_with_holes, d + 1)
                     p_vcw_path = np.vstack((p1_vcw_path[:i], p_vcw_path))
 
                     if total_distance(p_vcw_path) < total_distance(p1_vcw_path):
@@ -138,15 +139,16 @@ def visibility_path(p1, p2, polygons, map: Polygon = None, d=0):
 
             vcw_p2_line = LineString([vcw, p2])
 
-        while vccw_p2_line.crosses(polygon):  # or polygon.contains(vccw_p2_line):
-            iccw, vccw = get_next_vert(iccw, polygon, -1)
+        while vccw_p2_line.crosses(ring):  # or polygon.contains(vccw_p2_line):
+            iccw, vccw = get_next_vert(iccw, ring, -1)
             p1_vccw_path = np.vstack((p1_vccw_path, vccw))
 
             for i in range(len(p1_vccw_path) - 2, -1, -1):
                 p_vccw_line = LineString([p1_vccw_path[i], vccw])
 
-                if not polygon.crosses(p_vccw_line) and not polygon.contains(p_vccw_line):
-                    p_vccw_path = visibility_path(tuple(p1_vccw_path[i]), vccw, polygons, d + 1)
+                if not p_vccw_line.crosses(ring) and polygon_with_holes.contains(p_vccw_line):
+                    # print("mpla")
+                    p_vccw_path = visibility_path(tuple(p1_vccw_path[i]), vccw, polygon_with_holes, d + 1)
                     p_vccw_path = np.vstack((p1_vccw_path[:i], p_vccw_path))
 
                     if total_distance(p_vccw_path) < total_distance(p1_vccw_path):
@@ -154,8 +156,8 @@ def visibility_path(p1, p2, polygons, map: Polygon = None, d=0):
 
             vccw_p2_line = LineString([vccw, p2])
 
-        vcw_p2_path = visibility_path(vcw, p2, polygons, map, d + 1)
-        vccw_p2_path = visibility_path(vccw, p2, polygons, map, d + 1)
+        vcw_p2_path = visibility_path(vcw, p2, polygon_with_holes, d + 1)
+        vccw_p2_path = visibility_path(vccw, p2, polygon_with_holes, d + 1)
 
         vcw_p2_path = np.delete(vcw_p2_path, 0, axis=0)
         vccw_p2_path = np.delete(vccw_p2_path, 0, axis=0)
@@ -175,23 +177,21 @@ def visibility_path(p1, p2, polygons, map: Polygon = None, d=0):
 
     # print(path)
 
-    return path.astype(float)
+    return path.astype(int)
 
 
-def plot_visibility_path(polygons, path):
+def plot_visibility_path(polygon, path):
 
     fig, ax = plt.subplots()
 
     # Plot polygons
-    for i, poly in enumerate(polygons):
-        x, y = poly.exterior.xy
-        # if i == 0:
-        #     ax.plot(x, y, color="red")
-        # else:
-        ax.plot(x, y, color="blue")
-        for interior in poly.interiors:  # Plot holes
-            ix, iy = zip(*interior.coords)
-            ax.plot(ix, iy, color="blue")
+
+    x, y = polygon.exterior.xy
+    plt.plot(x, y, color="red")
+
+    for ring in polygon.interiors:
+        x, y = ring.xy
+        plt.plot(x, y, color="blue")
 
     # Plot visibility edges
     for i in range(len(path) - 1):
@@ -253,49 +253,33 @@ if __name__ == "__main__":
     polygons = []
     path = []
 
-    start = (15, 8)
-    end = (35, 10)
-
-    shapes = np.load("dataset/myfiles/object_polys_room1.npz")
-
-    # shapes = np.load("room_polys.npz")
-
-    for poly in shapes:
-        polygon = shapes[poly]
-        polygons.append(Polygon(polygon))
-
-    merged_polygon = unary_union(polygons)
-
-    # floor_poly = np.load("floor_poly.npy", allow_pickle=True)
-
-    polygons = []
-
-    for poly in merged_polygon.geoms:
-        poly = remove_collinear_points(poly)
-        # polygons[0] = polygons[0].difference(poly)
-        polygons.append(poly)
-
-    # remove self intersections
-    # result = polygons[0].buffer(0)
-    # polygons[0] = result.geoms[0]
-
-    # print(polygons[0].interiors)
-
     # # SECTION - Simple Test
-    # polygon_box = Polygon([(0, 0), (4, 0), (4, 6), (6, 5), (6, 0), (10, 0), (10, 10), (0, 10), (0, 0)])
-    # polygon1 = Polygon([(1, 1), (2, 2), (3, 4.5), (1, 4), (1, 1)])
-    # polygon2 = Polygon([(6.5, 2), (8, 2), (7, 5)])
+    polygon1 = [(1, 1), (2, 2), (3, 4.5), (1, 4), (1, 1)]
+    polygon2 = [(6.5, 2), (8, 2), (7, 5)]
+    polygon_box = Polygon([(0, 0), (4, 0), (4, 6), (6, 5), (6, 0), (10, 0), (10, 10), (0, 10), (0, 0)], [polygon1, polygon2])
 
-    # polygons = [polygon_box, polygon1, polygon2]
+    # polygons = [polygon_box]
 
-    # start = (0.5, 1)
-    # end = (8, 1)
+    start = (180, 30)
+    end = (200, 120)
+
+    # line = LineString([(1, 1), (3, 4.5)])
+    path = [start, end]
+
+    # ring = Polygon(polygon1)
+
+    # print(ring.contains(line))
+    # print(line.intersection(polygon_box))
+
+    floor = np.load("floor_2d_path.npy").T
+
+    polygon_box = cp.get_floor_polygon(floor)
 
     tm = time.time()
-    path = visibility_path(start, end, polygons)
+    path = visibility_path(start, end, polygon_box)
     # path = np.vstack((path, start))
     print(path)
     # print(dist)
     print("computation time = ", time.time() - tm)
 
-    plot_visibility_path(polygons, path)
+    plot_visibility_path(polygon_box, path)
