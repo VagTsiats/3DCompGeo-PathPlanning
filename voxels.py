@@ -151,11 +151,11 @@ class VoxelGrid:
 
         self.floor_path_planning[self.grid_labels == VoxelLabel.Floor] = 1
 
-        # floor_2d_mask = np.any(self.grid_labels == VoxelLabel.Floor, axis=2)
+        floor_2d_mask = np.any(self.grid_labels == VoxelLabel.Floor, axis=2)
         # plt.imshow(floor_2d_mask)
         # plt.show()
 
-        # np.save("floor_2d_mask", floor_2d_mask)
+        np.save("floor_2d_mask", floor_2d_mask)
 
     def wall_detection(self):
 
@@ -261,8 +261,6 @@ class VoxelGrid:
         occupied_idx = np.argwhere(self.grid_labels == VoxelLabel.Occupied)
         labels = dbscan.dbscan_3d(occupied_idx, eps=OBJECT_CLUSTER_EPS, min_pts=OBJECT_CLUSTER_MIN_PTS)
 
-        print(np.asarray(labels))
-
         for i in range(len(labels)):
             self.object_clusters[occupied_idx[i, 0], occupied_idx[i, 1], occupied_idx[i, 2]] = labels[i]
 
@@ -270,10 +268,13 @@ class VoxelGrid:
         print("Found Objects:", max_label)
 
         # visualize objects clusters
-        colors = plt.get_cmap("hsv")(labels / (max_label if max_label > 0 else 1))
+        colors = plt.get_cmap("tab20b")(labels / (max_label if max_label > 0 else 1))
         colors[labels < 0] = 0
         pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
-        o3d.visualization.draw_geometries([pcd])
+
+        self.object_pcd = pcd
+        return pcd
+        # o3d.visualization.draw_geometries([pcd])
 
     def door_recognition(self):
         wall_mask = self.grid_labels[:, :, : int(self.dims[2] / 2)] == VoxelLabel.Wall
@@ -302,6 +303,11 @@ class VoxelGrid:
             wall_mask[inlier_mask] = 0
 
     def project_objects(self):
+        object_2d_mask = np.any(self.object_clusters[:, :, :POINT_HEIGHT] >= 0, axis=2)
+        # plt.imshow(object_2d_mask)
+        # plt.show()
+
+        np.save("object_2d_mask", object_2d_mask)
 
         for k in range(np.max(self.object_clusters) + 1):
             object_2d_mask = np.any(self.object_clusters[:, :, :POINT_HEIGHT] == k, axis=2)
@@ -324,6 +330,11 @@ class VoxelGrid:
 
         # Create a new grid with only the largest component
         self.floor_path_planning = largest_component_mask.astype(int)
+
+        mpla = self.grid_labels
+        self.grid_labels[self.floor_path_planning == 1] = VoxelLabel.DarkFloor
+        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], filename="images/room1/floor_dark.png", show=False)
+        self.grid_labels = mpla
 
     def pick_point(self):
 
@@ -350,17 +361,15 @@ class VoxelGrid:
 
         points = self.pick_point()
 
+        # points = np.array([[16, 9], [105, 45]])
+
         floor_path_planning_2d = np.any(self.floor_path_planning, axis=2)
         # plt.imshow(floor_path_planning_2d)
         # plt.show()
 
-        np.save("floor_2d_path", floor_path_planning_2d)
+        # np.save("floor_2d_path", floor_path_planning_2d)
 
         polygon = cp.get_floor_polygon(floor_path_planning_2d.T)
-
-        print(len(polygon.exterior.coords))
-
-        # print(polygon)
 
         path = points[0]
 
@@ -374,7 +383,7 @@ class VoxelGrid:
 
         # vp.plot_visibility_path(polygon, path)
 
-        path = np.hstack((path, np.ones((path.shape[0], 1)) * np.round(self.floor_height))).astype(int)
+        path = np.hstack((path, np.ones((path.shape[0], 1)) * (np.round(self.floor_height) + 2))).astype(int)
 
         path = self.get_voxel_center(path)
 
@@ -390,7 +399,8 @@ class VoxelGrid:
         mpla = self.grid_labels
         self.grid_labels[self.floor_path_planning == 1] = VoxelLabel.DarkFloor
 
-        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.Occupied, VoxelLabel.DarkFloor], [lines])
+        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], [lines], filename="images/room1/path_no_obs.png", show=False)
+        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], [lines, self.object_pcd], filename="images/room1/path_obj.png", show=True)
 
         self.grid_labels = mpla
 
@@ -548,46 +558,65 @@ class VoxelGrid:
 
         o3d.visualization.draw_geometries([pcd, mesh_frame])
 
-    def visualize_grid(self, states=[], extras=[]):
+    def visualize_grid(self, states=[], extras=[], filename=None, show=True):
         "visualizes voxelgrid as points that represent the voxel centers with the respected color for each state"
         pcd = o3d.geometry.PointCloud()
         voxel_centers = []
         voxel_colors = []
         st = True
 
-        if not states:
-            st = False
+        if states[0] != None:
+            if not states:
+                st = False
 
-        for i in range(self.dims[0]):
-            for j in range(self.dims[1]):
-                for k in range(self.dims[2]):
-                    if self.grid_labels[i, j, k] == VoxelLabel.Ceiling and ((VoxelLabel.Ceiling in states and st == True) or st == False):
-                        voxel_colors.append([1, 0, 0])
-                        voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
-                    if self.grid_labels[i, j, k] == VoxelLabel.Floor and ((VoxelLabel.Floor in states and st == True) or st == False):
-                        if VoxelLabel.DarkFloor in states:
-                            voxel_colors.append([0, 0.5, 0])
-                        else:
+            for i in range(self.dims[0]):
+                for j in range(self.dims[1]):
+                    for k in range(self.dims[2]):
+                        if self.grid_labels[i, j, k] == VoxelLabel.Ceiling and ((VoxelLabel.Ceiling in states and st == True) or st == False):
+                            voxel_colors.append([1, 0, 0])
+                            voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
+                        if self.grid_labels[i, j, k] == VoxelLabel.Floor and ((VoxelLabel.Floor in states and st == True) or st == False):
+                            if VoxelLabel.DarkFloor in states:
+                                voxel_colors.append([0, 0.5, 0])
+                            else:
+                                voxel_colors.append([0, 1, 0])
+                            voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
+                        if self.grid_labels[i, j, k] == VoxelLabel.DarkFloor and (VoxelLabel.DarkFloor in states and st == True):
                             voxel_colors.append([0, 1, 0])
-                        voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
-                    if self.grid_labels[i, j, k] == VoxelLabel.DarkFloor and (VoxelLabel.DarkFloor in states and st == True):
-                        voxel_colors.append([0, 1, 0])
-                        voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
-                    if self.grid_labels[i, j, k] == VoxelLabel.Wall and ((VoxelLabel.Wall in states and st == True) or st == False):
-                        voxel_colors.append([0.6, 0.6, 0.6])
-                        voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
-                    if self.grid_labels[i, j, k] == VoxelLabel.Occupied and ((VoxelLabel.Occupied in states and st == True) or st == False):
-                        voxel_colors.append([0.1, 0.1, 0.1])
-                        voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
+                            voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
+                        if self.grid_labels[i, j, k] == VoxelLabel.Wall and ((VoxelLabel.Wall in states and st == True) or st == False):
+                            voxel_colors.append([0.6, 0.6, 0.6])
+                            voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
+                        if self.grid_labels[i, j, k] == VoxelLabel.Occupied and ((VoxelLabel.Occupied in states and st == True) or st == False):
+                            voxel_colors.append([0.1, 0.1, 0.1])
+                            voxel_centers.append(self.get_voxel_center(np.array([i, j, k])))
 
-        pcd.points = o3d.utility.Vector3dVector(np.array(voxel_centers))
-        pcd.colors = o3d.utility.Vector3dVector(np.array(voxel_colors))
+            pcd.points = o3d.utility.Vector3dVector(np.array(voxel_centers))
+            pcd.colors = o3d.utility.Vector3dVector(np.array(voxel_colors))
 
-        mesh_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=self.min_bound)
+        geometries = [pcd] + extras
 
-        geometries = [pcd, mesh_frame] + extras
+        vis = o3d.visualization.Visualizer()
+        vis.create_window(visible=show)
 
-        o3d.visualization.draw_geometries(geometries)
+        for g in geometries:
+            vis.add_geometry(g)
+
+        vis.get_render_option().show_coordinate_frame = True
+        vis.get_render_option().point_size = 8
+        vis.update_renderer()
+
+        if show:
+            vis.run()
+
+        # param = vis.get_view_control().convert_to_pinhole_camera_parameters()
+        # o3d.io.write_pinhole_camera_parameters("viewpoint.json", param)
+
+        if filename != None:
+            time.sleep(1)
+            vis.capture_screen_image(filename, do_render=True)
+
+        vis.destroy_window()
 
         return pcd
 
@@ -674,8 +703,6 @@ def voxelize_pcd(pcd, voxel_size=VOXEL_SIZE):
 
     reconstruction(seg)
 
-    return seg
-
     # seg.extract_inliers_pcd(room_pcd, VoxelLabel.Occupied)
     # seg.extract_inliers_pcd(room_pcd, VoxelLabel.Wall)
     # seg.extract_inliers_pcd(room_pcd, VoxelState.Ceiling)
@@ -689,7 +716,7 @@ def reconstruction(voxelgrid: VoxelGrid):
     voxelgrid.ceiling_floor_detection()
     voxelgrid.wall_detection()
 
-    # voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall])
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], filename="images/room1/Floor_Wall_Det.png", show=False)
 
     # refinements
     voxelgrid.ceiling_refinements()
@@ -697,22 +724,19 @@ def reconstruction(voxelgrid: VoxelGrid):
     voxelgrid.wall_refinements()
     voxelgrid.occupied_refinement()
 
-    # voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall])
-    # voxelgrid.visualize_grid()
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], filename="images/room1/Floor_Wall_Ref.png", show=False)
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall, VoxelLabel.Occupied], filename="images/room1/Floor_Wall_Occ_Ref.png", show=False)
 
     print("####_RECONSTRUCTION_DONE_####")
 
-    voxelgrid.object_clustering()
+    objects_pcd = voxelgrid.object_clustering()
 
-    # voxelgrid.door_recognition()
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], [objects_pcd], filename="images/room1/Floor_Wall_Obj.png", show=False)
 
-    # voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Occupied])
-    # voxelgrid.visualize_grid([VoxelLabel.Floor])
     voxelgrid.project_objects()
 
     while True:
-
-        line_path = voxelgrid.path_planning()
+        voxelgrid.path_planning()
 
     # voxelgrid.visualize_grid_state([VoxelLabel.Ceiling])
     # voxelgrid.visualize_grid_state([VoxelLabel.Occupied])
@@ -727,7 +751,8 @@ if __name__ == "__main__":
 
     # # A1
     # print("A1 - load room mesh")
-    # room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
+    room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
+    # room_mesh.compute_vertex_normals()
     # o3d.visualization.draw_geometries([room_mesh])
 
     # # A2
@@ -738,12 +763,16 @@ if __name__ == "__main__":
 
     # # A3
     # print("A3 - Mesh Sampling")
-    # room_pcd = uniform_sample.sample_mesh_uniformly(room_mesh, int(1e6))
+    room_pcd = uniform_sample.sample_mesh_uniformly(room_mesh, int(1e5))
+
     room_pcd = o3d.io.read_point_cloud("dataset/area_1/RoomPointCloud_1e6.ply")
+    # #  crop for vis
+    # points = np.asarray(room_pcd.points)
+    # room_pcd.points = o3d.utility.Vector3dVector(points[points[:, 2] < 2.5])
     # room_pcd = o3d.io.read_point_cloud("dataset/Stanford3dDataset_v1.2/Area_3/office_1/office_1.txt", format="xyz")
     # room_pcd = o3d.io.read_point_cloud("dataset/Stanford3dDataset_v1.2/Area_1/conferenceRoom_1/conferenceRoom_1.txt", format="xyz")
     # room_pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/conferenceRoom_1/conferenceRoom_1.txt", format="xyz")
-    # o3d.visualization.draw_geometries([room_pcd])
+    o3d.visualization.draw_geometries([room_pcd])
 
     # room_pcd = room_pcd.rotate(room_pcd.get_rotation_matrix_from_xyz(np.array([[-np.pi / 2, 0, 0]]).T))
 

@@ -10,7 +10,8 @@ def get_floor_polygon(grid):
     # Assume 1 is occupied, so we want to keep those and set everything else to 0
     binary_grid = (grid == 1).astype(np.uint8) * 255
 
-    # Find contours and hierarchy using OpenCV
+    # cv2.CHAIN_APPROX_SIMPLE only necessary points of contour
+    #
     contours, hierarchy = cv2.findContours(binary_grid, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
 
     # Initialize outer and inner polygons
@@ -40,40 +41,12 @@ def get_floor_polygon(grid):
     return shapely_polygon
 
 
-# def is_collinear(p1, p2, p3):
-#     """Check if three points are collinear."""
-#     return (p3.y - p1.y) * (p2.x - p1.x) == (p2.y - p1.y) * (p3.x - p1.x)
-
-
-# def remove_collinear_points(polygon):
-#     """Remove collinear points from a polygon."""
-#     if not isinstance(polygon, Polygon):
-#         raise TypeError("Input must be a Shapely Polygon")
-
-#     ring = LinearRing(polygon.exterior.coords)
-#     non_collinear_coords = []
-
-#     for i in range(len(ring.coords) - 2):
-#         p1 = Point(ring.coords[i])
-#         p2 = Point(ring.coords[i + 1])
-#         p3 = Point(ring.coords[i + 2])
-
-#         if not is_collinear(p1, p2, p3):
-#             non_collinear_coords.append(ring.coords[i + 1])
-
-#     # Adding the first point and the last point
-#     non_collinear_coords.insert(0, ring.coords[0])
-#     non_collinear_coords.append(ring.coords[-1])
-
-#     return Polygon(non_collinear_coords)
-
-
 if __name__ == "__main__":
 
     # Plot the original occupancy grid and the polygon image
     plt.figure(figsize=(12, 6))
 
-    grid = np.load("floor_2d_path.npy").T
+    grid = np.load("floor_2d_path.npy")
 
     plt.subplot(1, 2, 1)
     plt.title("Original Occupancy Grid")
@@ -87,7 +60,7 @@ if __name__ == "__main__":
 
     polygon = get_floor_polygon(grid)
 
-    print(len(polygon.exterior.coords))
+    # polygon = create_polygon_with_holes(floor_grid, object_grid)
 
     x, y = polygon.exterior.xy
     plt.plot(x, y, color="red", label="Main Polygon")

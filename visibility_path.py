@@ -129,7 +129,7 @@ def visibility_path(p1, p2, polygon_with_holes, d=0):
             for i in range(len(p1_vcw_path) - 2, -1, -1):
                 p_vcw_line = LineString([p1_vcw_path[i], vcw])
 
-                if not p_vcw_line.crosses(ring) and polygon_with_holes.contains(p_vcw_line):  # ayto to gamidi
+                if not p_vcw_line.crosses(ring) and polygon_with_holes.contains(p_vcw_line):  # ayth h vlakeia
                     # print("mpla")
                     p_vcw_path = visibility_path(tuple(p1_vcw_path[i]), vcw, polygon_with_holes, d + 1)
                     p_vcw_path = np.vstack((p1_vcw_path[:i], p_vcw_path))
@@ -201,52 +201,6 @@ def plot_visibility_path(polygon, path):
 
     ax.set_aspect("equal", "box")
     plt.show()
-
-
-def is_collinear(p1, p2, p3):
-    """Check if three points are collinear."""
-    return (p3.y - p1.y) * (p2.x - p1.x) == (p2.y - p1.y) * (p3.x - p1.x)
-
-
-def remove_collinear_points(polygon):
-    """Remove collinear points from a polygon."""
-    if not isinstance(polygon, Polygon):
-        raise TypeError("Input must be a Shapely Polygon")
-
-    ring = LinearRing(polygon.exterior.coords)
-    non_collinear_coords = []
-
-    for i in range(len(ring.coords) - 2):
-        p1 = Point(ring.coords[i])
-        p2 = Point(ring.coords[i + 1])
-        p3 = Point(ring.coords[i + 2])
-
-        if not is_collinear(p1, p2, p3):
-            non_collinear_coords.append(ring.coords[i + 1])
-
-    # Adding the first point and the last point
-    non_collinear_coords.insert(0, ring.coords[0])
-    non_collinear_coords.append(ring.coords[-1])
-
-    return Polygon(non_collinear_coords)
-
-
-def polygons_preprocessing(polygon_points):
-
-    polygons = []
-
-    for poly in polygon_points:
-        polygons.append(Polygon(poly))
-
-    merged_polygon = unary_union(polygons)
-
-    polygons = []
-
-    for poly in merged_polygon.geoms:
-        poly = remove_collinear_points(poly)
-        polygons.append(poly)
-
-    return polygons
 
 
 if __name__ == "__main__":
