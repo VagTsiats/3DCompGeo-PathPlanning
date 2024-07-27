@@ -333,7 +333,7 @@ class VoxelGrid:
 
         mpla = self.grid_labels
         self.grid_labels[self.floor_path_planning == 1] = VoxelLabel.DarkFloor
-        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], filename="images/room1/floor_dark.png", show=False)
+        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], filename="images/room1/floor_dark.png", show=True)
         self.grid_labels = mpla
 
     def pick_point(self):
@@ -399,7 +399,7 @@ class VoxelGrid:
         mpla = self.grid_labels
         self.grid_labels[self.floor_path_planning == 1] = VoxelLabel.DarkFloor
 
-        self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], [lines], filename="images/room1/path_no_obs.png", show=False)
+        # self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], [lines], filename="images/room1/path_no_obs.png", show=False)
         self.visualize_grid([VoxelLabel.Floor, VoxelLabel.DarkFloor], [lines, self.object_pcd], filename="images/room1/path_obj.png", show=True)
 
         self.grid_labels = mpla
@@ -716,7 +716,9 @@ def reconstruction(voxelgrid: VoxelGrid):
     voxelgrid.ceiling_floor_detection()
     voxelgrid.wall_detection()
 
-    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], filename="images/room1/Floor_Wall_Det.png", show=False)
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall, VoxelLabel.Ceiling])
+
+    # voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], filename="images/room1/Floor_Wall_Det.png", show=False)
 
     # refinements
     voxelgrid.ceiling_refinements()
@@ -724,14 +726,14 @@ def reconstruction(voxelgrid: VoxelGrid):
     voxelgrid.wall_refinements()
     voxelgrid.occupied_refinement()
 
-    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], filename="images/room1/Floor_Wall_Ref.png", show=False)
-    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall, VoxelLabel.Occupied], filename="images/room1/Floor_Wall_Occ_Ref.png", show=False)
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], filename="images/room1/Floor_Wall_Ref.png", show=True)
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall, VoxelLabel.Occupied], filename="images/room1/Floor_Wall_Occ_Ref.png", show=True)
 
     print("####_RECONSTRUCTION_DONE_####")
 
     objects_pcd = voxelgrid.object_clustering()
 
-    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], [objects_pcd], filename="images/room1/Floor_Wall_Obj.png", show=False)
+    voxelgrid.visualize_grid([VoxelLabel.Floor, VoxelLabel.Wall], [objects_pcd], filename="images/room1/Floor_Wall_Obj.png", show=True)
 
     voxelgrid.project_objects()
 
@@ -753,22 +755,26 @@ if __name__ == "__main__":
     # print("A1 - load room mesh")
     room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
     # room_mesh.compute_vertex_normals()
-    # o3d.visualization.draw_geometries([room_mesh])
+    o3d.visualization.draw_geometries([room_mesh])
 
     # # A2
     # print("A2 - Mesh room objects ")
     # start = time.time()
-    # voxelize_mesh(room_mesh)
+    voxelize_mesh(room_mesh)
     # print("MESH-voxels time: ", time.time() - start)
 
     # # A3
     # print("A3 - Mesh Sampling")
     room_pcd = uniform_sample.sample_mesh_uniformly(room_mesh, int(1e5))
 
-    room_pcd = o3d.io.read_point_cloud("dataset/area_1/RoomPointCloud_1e6.ply")
     # #  crop for vis
-    # points = np.asarray(room_pcd.points)
-    # room_pcd.points = o3d.utility.Vector3dVector(points[points[:, 2] < 2.5])
+    points = np.asarray(room_pcd.points)
+    room_pcd.points = o3d.utility.Vector3dVector(points[points[:, 2] < 2.5])
+
+    o3d.visualization.draw_geometries([room_pcd])
+
+    room_pcd = o3d.io.read_point_cloud("dataset/area_1/RoomPointCloud_1e6.ply")
+
     # room_pcd = o3d.io.read_point_cloud("dataset/Stanford3dDataset_v1.2/Area_3/office_1/office_1.txt", format="xyz")
     # room_pcd = o3d.io.read_point_cloud("dataset/Stanford3dDataset_v1.2/Area_1/conferenceRoom_1/conferenceRoom_1.txt", format="xyz")
     # room_pcd = o3d.io.read_point_cloud("dataset/area_3/Area_3/conferenceRoom_1/conferenceRoom_1.txt", format="xyz")
