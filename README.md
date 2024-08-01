@@ -1,75 +1,37 @@
 # 3D Computational Geometry & Computer Vision - Path Planning Project
 
-## Μέρος Α
-
-Σε αυτό το μέρος της εργασίας ασχολούμαστε με ένα mesh εσωτερικού χώρου με σκοπό την αναγνώριση
-επιπέδων όπως το ταβάνι, οι τοίχοι, το πάτωμακαι την απομόνωση των εσωτερικών αντικειμένων του 
-δωματίου. Η προσέγγιση του θέματος έγινε με χρήση voxel grids καθώς απλουστεύουν
-την αναγνώριση δομών και διευκολύνουν την επεξεργασία των δεδομένων.
-
-### Βήματα Υλοποίησης
-1. **Φόρτωση Δεδομένων**
-
-    Το σύνολο δεδομένων που χρησιμοποιείται σε αυτή την ανάλυση προέρχεται από το 
-    [Stanford 3D Indoor Spaces Dataset (S3DIS)](http://buildingparser.stanford.edu/dataset.html).
-    Αρχικά επιλέχθηκε ένα δωμάτιο με μια ανοιχτή πόρτα και χωρίς παράθυρα, το οποίο φορτώθηκε από τον
-    κώδικα με χρήση της βιβλιοθήκης open3d.
+This project focuses on the analysis and processing of indoor scenes using data from the [Stanford 3D Indoor Spaces Dataset (S3DIS)](http://buildingparser.stanford.edu/dataset.html). In the first part, plane detection was used to identify the walls, floor, and ceiling of a closed room, and interior objects were isolated using initial data consisting of a mesh of the scene. Sampling was implemented to create a point cloud with a uniform distribution of points, where the plane detection method was applied again to isolate the interior objects. In the second part, a clustering algorithm was developed and applied to identify objects in the room. Additionally, an algorithm was developed for calculating the optimal path between two points within the room, as well as within a floor consisting of multiple rooms, taking into account the complete geometry of the space.
 
 
-2. **Ανίχνευση επιπέδων** 
+## Preprocessing
 
-    Για την ανίχνευση των επιπέδων τα αρχικά δεδομένα μετατράπηκαν σε voxel grid. Κάθε voxel αντιπροσωπεύει
-    έναν μικρό κυβικό όγκο στον χώρο και η ανάλυση του mesh σε voxels επιτρέπει την πιο εύκολη αναγνώριση
-    επιπέδων και δομών.Στη συνέχεια κάθε voxel κατηγοριοποιήθηκε με βάση το normal διάνυσμα του τριγώνου με
-    το οποίο επικαλύπτωνται στον χώρο, ως εξής:
+In this part a voxel grid was created assigning values on each voxel based on the normal vector direction from the initial data.
 
-    - **Ceiling (Ταβάνι)**
-    - **Floor (Πάτωμα)**
-    - **Wall (Τοίχος)**
-    - **Occupied (Κατειλημμένο)** 
+## Plane detection
 
-    Αφού γίνει η αρχική κατηγοριοποίηση εφαρμόζονται αρκετές διαδιχικές σαρώσεις στο voxel grid
-    για φιλτράρισμα και ανίχνευση μεγάλων επιφανειών απο τις οποίες επιλέγονται τα επιθυμητά επίπεδα (πάτωμα, ταβάνι, τοίχοι).
-    Η επιλογή γίνεται χρησιμοποιώντας κανόνες που βασίζονται στη γεωμετρία και την κατανομή των σημείων εντός του
-    voxel grid. 
+Various sweeps are performed on the voxel-grid to reconstruct the rooms structural elements and then RANSAC algorithm was used to identify the walls of the room, isolating the objects inside the room.
 
-    Μετά την αναγνώριση των επιπέδων, οι υπόλοιπες περιοχές που δεν ανήκουν στα μεγάλα επίπεδα κατηγοριοποιούνται
-    ως κατειλημμένες και αποτελλούν τα εσωτερικά αντικείμενα του δωματίου. Αυτή η διαδικασία επιτρέπει την
-    απομόνωση των αντικειμένων από τις υπόλοιπες δομές του δωματίου.
-
-3. **Δειγματοληψία Mesh σε Point Cloud**
-
-    Στο βήμα αυτό υλοποιήθηκε μια μέθοδος δειγματοληψίας στο αρχικό mesh, με παραμετροποιήσιμο αριθμό σημείων.
-
-4. **Ανίχνευση Επιπέδων σε Point Cloud Δεδομένα**
-
-    Εφόσον τα αρχικά δενομένα είναι σε μορφή PointCloud, μετατρέπονται ξανά σε voxel grid και εφαρμόζονται
-    οι μέθοδοι του βήματος 2, με την διαφορά πως κατα την αρχική μετατροπή των δεδομένων, κάθε voxel
-    χαρακτηρίζεται με βάση το μέσο διάνυσμα normal των σημείων που περικλείει.
+![alt text](result_images/image-1.png)
 
 
+## Uniform Sampling
 
-### Παρατηρήσεις
-Η μεθοδός με χρήση και voxel grids προτιμήθηκε καθώς είναι ικανή να επεξεργάζεται δεδομένα από πολλά δωμάτια
-ταυτόχρονα και να αντιμετωπίζει περιπτώσεις όπου οι τοίχοι δεν είναι κάθετοι μεταξύ τους και η ακρίβεια των 
-αποτελεσμάτων της μπορεί να βελτιωθεί με παραπάνω επεξεργασία. Επιπλέον εκτιμάται οτι μπορεί να διευκολύνει 
-την υλοποίηση του δεύτερου μέρους της εργασίας 
+A uniform sampling algorithm was implemented to sample a point cloud from the initial room mesh.
+The resulting point cloud was then used as initial data for the same preprocessing method, creating the same result
 
-### Οδηγίες
-Με την εκτέλεση του αρχείου `voxels.py` εκτελείται ο παρακάτω κώδικας για κάθε ερώτημα.
+## Object Clustering
 
-```python
-    #A1
-    room_mesh = o3d.io.read_triangle_mesh("dataset/area_1/RoomMesh.ply")
+After the internal objects were isolated, DBSCAN was used to cluster the interior objects as shown bellow.
 
-    # A2
-    voxelize_mesh(room_mesh)
+![alt text](result_images/image-2.png)
 
-    # A3
-    room_pcd = uniform_sample.sample_mesh_uniformly(room_mesh, int(1e6))
+## Path Planning
 
-    # A4
-    voxelize_pcd(room_pcd)
-```
+The object clusters were projected to the floor. Then the reachable area was represented by polygons. The path was calculated avoiding these polygons.
 
-Η υλοποίηση της δειγματολειψίας γίνεται στο αρχείο `uniform_sample.py`
+![alt text](result_images/image-3.png)
+
+The developed algorithm called "visipath" is a recursive algorithm calculating the near optimal path between two points based on visibility graph concepts.
+
+![alt text](result_images/image-4.png)
+
